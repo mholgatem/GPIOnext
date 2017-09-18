@@ -31,6 +31,9 @@ systemctl stop gpionext
 systemctl disable gpionext
 rm /lib/systemd/system/gpionext.service
 
+#remove bash commands
+rm /usr/bin/gpionext
+
 file1="/etc/rc.local"
 file2="/home/pi/.profile"
 if grep --quiet "retrogame" $file1 $file2; then
