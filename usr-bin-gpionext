@@ -1,0 +1,9 @@
+if [[ ! -z $(echo ${1} | grep -i stop) ]]; then
+  echo "Stopping GPIOnext daemon..."
+  sudo systemctl stop gpionext
+elif [[ ! -z $(echo ${1} | grep -i start) ]]; then
+  echo "Starting GPIOnext daemon..."
+  sudo systemctl start gpionext
+elif [[ ! -z $(echo ${1} | grep -i config) ]]; then
+  sudo python3 $CONFIG_PATH
+fi

@@ -1,0 +1,13 @@
+[Unit]
+Description=gpionext-daemon
+
+[Service]
+Type=simple
+WorkingDirectory=/home/pi/gpionext
+ExecStart=/usr/bin/python3 -u gpionext.py
+Restart=on-failure
+RestartSec=1
+ExecReload=/bin/kill -HUP $MAINPID
+
+[Install]
+WantedBy=multi-user.target
