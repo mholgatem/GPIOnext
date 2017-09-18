@@ -29,7 +29,8 @@ echo -e "${CYAN}${UNDERLINE}Installing Dependencies...${NONE}"
 echo
 sudo apt-get -y install python3 python3-pip python3-dev gcc
 sudo apt-get -y install sqlite3
-sudo pip3 evdev
+sudo apt-get install python3-rpi.gpio
+sudo pip3 install evdev
 
 # add gpionext.service to systemd
 file1=$SCRIPTPATH"/gpionext.service"
@@ -51,7 +52,7 @@ if ! grep --quiet "evdev" /etc/modules; then echo "evdev" >> /etc/modules; fi
 cp $SCRIPTPATH"/usr-bin-gpionext" /usr/bin/gpionext
 config="CONFIG_PATH=${SCRIPTPATH}/config_manager.py"
 sed -i '1s#^#'$config'\n#g' /usr/bin/gpionext
-chmod 777 $SCRIPTPATH/config_manager.py
+chmod 777 /usr/bin/gpionext
 
 # remove retrogame if present
 file1="/etc/rc.local"
