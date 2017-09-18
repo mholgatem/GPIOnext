@@ -264,7 +264,7 @@ class ConfigurationManager:
 		pressed = ', '.join( map(str, pressed) )
 		print( '- Pin(s):', pressed )
 		self.waitForButtonRelease()
-		if direction in ["UP", "RIGHT"]:
+		if direction in ["DOWN", "RIGHT"]:
 			value = JOYSTICK_AXIS.max
 		else:
 			value = JOYSTICK_AXIS.min
