@@ -10,7 +10,7 @@
 <h4>How to install</h4>in terminal type:
 <pre>cd ~
 git clone https://github.com/mholgatem/GPIOnext.git
-bash gpionext/install.sh</pre>
+bash GPIOnext/install.sh</pre>
 That's it! The installer is still very much in the beta stage, so let me know if you have problems. But I have tested it on several clean raspbian/piplay images with no problem.
 
 <h4>How to use</h4> After the installer runs, you will be prompted to run the configuration tool. Just follow the command prompts to set up any controls that you want. After exiting, type 'gpionext start' to run the daemon in the background
