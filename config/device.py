@@ -4,6 +4,7 @@ import threading
 from datetime import datetime
 from evdev import UInput, AbsInfo, ecodes as e
 from config.constants import *
+from config import gpio
 
 '''
 ---------------------------------------------------------
@@ -47,8 +48,13 @@ class AbstractEvent:
 	def release( self ):
 		pass
 		
-	def bitmaskContains( self, gpioBitmask ):
+	def bitmaskIn( self, gpioBitmask ):
 		return gpioBitmask & self.bitmask == self.bitmask
+		
+	def waitForRelease( self ):
+		while gpio.bitmask & self.bitmask == self.bitmask:
+			time.sleep(0.01)
+		self.release()
 			
 class Axis( AbstractEvent ):
 	''' Joystick Axis Event '''
@@ -63,6 +69,7 @@ class Axis( AbstractEvent ):
 	def press( self ):
 		self.isPressed = time.time()
 		self.injector.write( *self.command )
+		self.waitForRelease()
 		
 	def hold( self ):
 		pass
@@ -81,6 +88,7 @@ class Button( AbstractEvent ):
 	def press( self ):
 		self.isPressed = time.time()
 		self.injector.write(e.EV_KEY, self.command, 1)
+		self.waitForRelease()
 		
 		
 	def release( self ):
@@ -93,7 +101,7 @@ class Key( AbstractEvent ):
 	def __init__( self, entry ):
 		super().__init__( entry )
 		self.command = int( self.command )
-		self.holdTimer = threading.Timer( 0.35, self.hold)
+		self.holdTimer = threading.Timer( 0.35, self.hold )
 		
 	def press( self ):
 		self.isPressed = time.time()
@@ -102,6 +110,7 @@ class Key( AbstractEvent ):
 			self.holdTimer.start()
 		except:
 			pass
+		self.waitForRelease()
 		
 	def hold( self ):
 		while self.isPressed:
@@ -144,8 +153,8 @@ class Device:
 		self.pinEvents = { pin:[] for pin in AVAILABLE_PINS }
 		self.queue = []
 		self.processing = False
-		self.timerDelay = args.combo_delay
-		self.processTimer = threading.Timer( self.timerDelay, self.processQueue )
+		self.comboDelay = args.combo_delay
+		self.processTimer = threading.Timer( self.comboDelay, self.processQueue )
 		# If SQL returns any entries for device
 		if params:
 			self.name = params[0]['device']
@@ -225,12 +234,13 @@ class Device:
 			if self.args.dev:
 				print( msg )
 		
-	# Needs to be registered with gpio.py
+	# This event gets registered with gpio.py
 	def pressEvents( self, gpioBitmask, channel ):
 		for event in self.pinEvents[ channel ]:
-			if event.bitmaskContains( gpioBitmask ):
+			if event.bitmaskIn( gpioBitmask ):
 				self.queue.append( event )
 				gpioBitmask &= ~event.bitmask
+		# start queue processing
 		if not self.processing:
 			self.processing = True
 			if not self.processTimer.is_alive():
@@ -239,46 +249,32 @@ class Device:
 				except RuntimeError:
 					# Timer already started
 					pass
-	
-	# Needs to be registered with gpio.py
-	def releaseEvents( self, gpioBitmask, channel ):
-		for event in self.pinEvents[ channel ]:
-			if event.isPressed:
-				self.DEBUG('Release ' + event.name)
-				event.release()
-		time.sleep(0.01)
-		self.injector.syn()
 		
-	
 	def processQueue( self ):	
 		''' 
 			This method processes press events as they enter the queue
 		'''
-		while self.processing:
+		while self.queue:
 			try:
-				currentEvent = self.queue[0]
+				currentEvent = self.queue[ 0 ]
 				currentBitmask = currentEvent.bitmask
-				for event in self.queue[1:]:
+				for event in self.queue[ 1: ]:
 					# check if button is part of combo press
-					if currentEvent.bitmaskContains( event.bitmask ):
-						# check if button is just being repeatedly pressed
-						#if currentBitmask != event[0].bitmask:
+					if currentEvent.bitmaskIn( event.bitmask ):
+						# remove currentEvent
 						self.queue.pop(0)
 						break
 				else:
 					# run the method
 					self.DEBUG( 'Press ' + currentEvent.name )
-					currentEvent.press()
+					threading.Thread( target=currentEvent.press ).start()
 					if self.queue:
-						self.queue.pop(0)
+						self.queue.pop( 0 )
 					self.injector.syn()
+					time.sleep( self.comboDelay )
 			except IndexError:
 				pass	
 				
-				self.processTimer = threading.Timer( self.timerDelay, self.processQueue )
-				if len( self.queue ) > 0:
-					self.processTimer.start()
-				else:
-					self.processing = False
-			
+		self.processTimer = threading.Timer( self.comboDelay, self.processQueue )
+		self.processing = False
 		

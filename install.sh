@@ -8,7 +8,7 @@ cd $SCRIPTPATH
 # if not root user, restart script as root
 if [ "$(whoami)" != "root" ]; then
 	echo "Switching to root user..."
-	sudo bash $SCRIPT
+	sudo bash $SCRIPT $*
 	exit 1
 fi
 
@@ -19,10 +19,16 @@ CYAN='\033[36m'
 FUSCHIA='\033[35m'
 UNDERLINE='\033[4m'
 
-# run update
-echo -e "${CYAN}${UNDERLINE}Running Update...${NONE}"
-sudo apt-get update
-echo
+shopt -s nocasematch
+
+if ! [[ "$1" == "-noupdate" ]]; then
+	# run update
+	echo -e "${CYAN}${UNDERLINE}Running Update...${NONE}"
+	sudo apt-get update
+	echo
+fi
+
+shopt -u nocasematch
 
 # install dependencies
 echo -e "${CYAN}${UNDERLINE}Installing Dependencies...${NONE}"

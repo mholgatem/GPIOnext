@@ -20,7 +20,7 @@ def registerDevices( devices ):
 	global pinPressMethods, pinReleaseMethods
 	for device in devices:
 		pinPressMethods.append( device.pressEvents )
-		pinReleaseMethods.append( device.releaseEvents )
+		#pinReleaseMethods.append( device.releaseEvents )
 			
 def onPinChange( channel ):
 	global pinChangeMethods, bitmask
@@ -51,6 +51,7 @@ class pin:
 	def __init__( self, number, pull, args ):
 		self.number = number
 		self.pull = pull
+		self.bit = ( 1 << number )
 		GPIO.setup(number, GPIO.IN, pull_up_down=pull)
 		GPIO.add_event_detect(	self.number, 
 											GPIO.BOTH, 
@@ -61,12 +62,11 @@ class pin:
 		global bitmask
 		global changedState
 		changedState = True
-		bit = ( 1 << channel )
 		if self.button_pressed( ):
-			bitmask |= bit #add channel
+			bitmask |= self.bit #add channel
 			onPinPress( channel )
 		else:
-			bitmask &= ~( bit ) #remove channel
+			bitmask &= ~( self.bit ) #remove channel
 			onPinRelease( channel )
 		onPinChange( channel )
 			
@@ -94,7 +94,7 @@ def setupGPIO( args ):
 	for pinNumber in args.pins:
 		if pull == GPIO.PUD_DOWN:
 			if pinNumber in (3,5):
-				print("Can't set I2C pins to pulldown!")
+				print("Can't set I2C pins to pulldown! Skipping...")
 				continue
 		pins.append( pin(pinNumber, pull, args) )
 		
