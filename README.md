@@ -2,7 +2,7 @@
 <h6>A Python Based GPIO Controller</h6>This is a GPIO controller that is fully compatible with RetroPie (and PiPlay). For anyone that is familiar with Adafruit's RetroGame Utility, this is very similar. The main difference being that this is user friendly and full featured.
 <h4>What's New?</h4>
 <ul><li>Configuration tool to auto map buttons to keystrokes</li>
-<li>web-front end to easily modify settings/will auto integrate with piplay's web frontend</li>
+<li>Graphical Command line interface allows you to configure controls even on "lite" OS's</li>
 <li>supports button combinations for additional keystrokes</li>
 <li>map multiple keystrokes/commands to a single button</li>
 <li><b>It supports system commands! (you can map volume/shutdown/etc to buttons)</b></li>
