@@ -19,7 +19,7 @@ You can stop/start/run config from the command line simply by typing any of the 
 gpionext start
 gpionext config</pre>
 
-<h4>GPIOnext Flags</h4>
+<h2>GPIOnext Flags</h2>
 
 **gpionext set combo_delay [#]** - the delay in milliseconds to allow for combos to be pressed
 
