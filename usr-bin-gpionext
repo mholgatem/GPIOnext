@@ -15,7 +15,7 @@ set_flag(){
 case "$1" in
 
 "STOP")
-sudo stop systemctl gpionext
+sudo systemctl stop gpionext
 ;;
 
 "START")
