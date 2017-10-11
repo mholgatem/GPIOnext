@@ -34,7 +34,7 @@ shopt -u nocasematch
 echo -e "${CYAN}${UNDERLINE}Installing Dependencies...${NONE}"
 echo
 sudo apt-get -y install python3 python3-pip python3-dev gcc
-sudo apt-get -y install sqlite3
+sudo apt-get -y install sqlite3 joystick
 sudo apt-get install python3-rpi.gpio
 sudo pip3 install evdev
 
