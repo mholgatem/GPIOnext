@@ -2,7 +2,7 @@
 <h6>A Python Based GPIO Controller</h6>This is a GPIO controller that is fully compatible with RetroPie (and PiPlay). For anyone that is familiar with Adafruit's RetroGame Utility, this is very similar. The main difference being that this is user friendly and full featured.
 <h4>What's New?</h4>
 <ul><li>Configuration tool to auto map buttons to keystrokes</li>
-<li>web-front end to easily modify settings/will auto integrate with piplay's web frontend</li>
+<li>Graphical Command line interface allows you to configure controls even on "lite" OS's</li>
 <li>supports button combinations for additional keystrokes</li>
 <li>map multiple keystrokes/commands to a single button</li>
 <li><b>It supports system commands! (you can map volume/shutdown/etc to buttons)</b></li>
@@ -18,3 +18,31 @@ You can stop/start/run config from the command line simply by typing any of the 
 <pre>gpionext stop
 gpionext start
 gpionext config</pre>
+
+<h2>GPIOnext Flags</h2>
+
+**gpionext set combo_delay [#]** - the delay in milliseconds to allow for combos to be pressed
+
+  * *default:* gpionext set combo_delay 50
+  
+**gpionext set pins [#,#,#|default]** - the pins that gpionext will configure and watch
+
+  * *default:* gpionext set pins default
+  * *example:* gpionext set pins 3,5,38,40
+  
+**gpionext set debounce [#]** - the delay in milliseconds to allow for button debounce
+
+  * *default:* gpionext set debounce 1
+  
+**gpionext set pulldown [true|false]** - set gpio pulldown resistors instead of pullup
+
+  * *default:* gpionext set pulldown false
+  
+**gpionext set debug [true|false]** - write output to /home/pi/gpionext/logFile.txt
+
+  * *default:* gpionext set debug false
+  
+**gpionext set dev [true|false]** - write output to console
+
+  * *default:* gpionext set dev false
+  

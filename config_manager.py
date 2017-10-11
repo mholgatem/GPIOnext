@@ -11,7 +11,7 @@ import sqlite3
 import signal
 import readline
 from datetime import datetime
-from evdev import UInput, ecodes as e
+from evdev import ecodes as e
 from config import gpio, menus, SQL
 from config.constants import *
 
