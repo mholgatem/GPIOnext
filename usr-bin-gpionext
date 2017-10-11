@@ -50,14 +50,13 @@ sudo journalctl -u gpionext -f
 
 "TEST")
 hash jstest >/dev/null || { echo >&2 "Installing Joystick for test module"; sudo apt-get install joystick; }
-echo
-echo -e "${CYAN}Press Ctrl + C to exit${NONE}";
 (for i in /sys/devices/virtual/input/input*; do 
 	if [[ $(cat "$i/name") == "GPIOnext Joypad $2" ]]; then
 		event="/dev/input/"$(find $i -maxdepth 1 -type d -name 'js*' -printf '%f' -quit);
+		echo -e "${CYAN}Press Ctrl + C to exit${NONE}";
 		jstest --normal "$event"; 
 	fi
-done) && echo "\n" || echo "Could not find GPIOnext Joypad $2 in virtual devices"
+done) && echo "Could not find GPIOnext Joypad $2 in virtual devices"
 ;;
 
 "SET")
