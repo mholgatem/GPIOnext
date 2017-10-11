@@ -1,13 +1,16 @@
+NONE='\033[00m'
+CYAN='\033[36m'
+
 # set case insensitive
 shopt -s nocasematch
 
 set_flag(){
+	sudo systemctl stop gpionext
 	sudo cp /lib/systemd/system/gpionext.service /tmp/gpionext.tmp
 	sudo sed -i -e "$1" /tmp/gpionext.tmp
 	sudo cp /tmp/gpionext.tmp /lib/systemd/system/gpionext.service
 	# reload daemon and restart
-	echo "Restarting GPIOnext"
-	sudo systemctl stop gpionext
+	echo "Setting Flag and Restarting GPIOnext..."
 	sudo systemctl daemon-reload
 	sudo systemctl start gpionext
 }
@@ -31,12 +34,30 @@ sudo python3 $CONFIG_PATH
 sudo systemctl disable gpionext
 ;;
 
+"RELOAD")
+sudo systemctl stop gpionext
+sudo systemctl daemon-reload
+sudo systemctl start gpionext
+;;
+
 "JOURNAL")
 if ! [[ $(grep "\-\-dev" /lib/systemd/system/gpionext.service) ]]; then
 	echo "use 'gpionext set dev true' before running this command to get more information"
 fi
-echo "Press Ctrl+C to exit"
+echo -e "${CYAN}Press Ctrl + C to exit${NONE}";
 sudo journalctl -u gpionext -f
+;;
+
+"TEST")
+hash jstest >/dev/null || { echo >&2 "Installing Joystick for test module"; sudo apt-get install joystick; }
+echo
+echo -e "${CYAN}Press Ctrl + C to exit${NONE}";
+(for i in /sys/devices/virtual/input/input*; do 
+	if [[ $(cat "$i/name") == "GPIOnext Joypad $2" ]]; then
+		event="/dev/input/"$(find $i -maxdepth 1 -type d -name 'js*' -printf '%f' -quit);
+		jstest --normal "$event"; 
+	fi
+done) && echo "\n" || echo "Could not find GPIOnext Joypad $2 in virtual devices"
 ;;
 
 "SET")
@@ -46,28 +67,28 @@ sudo journalctl -u gpionext -f
 			if [[ $3 =~ $wholeNumber ]] ; then
 				set_flag 's/--combo_delay [0-9]*/--combo_delay '$3'/g'
 			else
-				echo "You must supply a valid whole number for $2"
+				echo -e "You must supply a ${CYAN}valid whole number${NONE} for $2"
 			fi
 			;;
 		"PINS")
 			case "$3" in
 				"DEFAULT")
-					echo "default"
+					echo "setting pins to default"
 					set_flag 's/[ ]*--pins [0-9/,]*//g'
 					;;
 				[0-9/,]*)
-					echo "setting pins"
+					echo "setting pins $3"
 					set_flag 's/[ ]*--pins [0-9/,]*//g;s/^ExecStart=.*/& --pins '$3'/g'
 					;;
 				*)
-					echo "You must supply comma separated pin numbers [ex. set pins 3,5,7,11] or default";;
+					echo -e "You must supply ${CYAN}comma separated pin numbers${NONE} [ex. set pins 3,5,7,11] or default";;
 			esac
 			;;
 		"DEBOUNCE")
 			if [[ $3 =~ $wholeNumber ]] ; then
 				set_flag 's/--debounce [0-9]*/--debounce '$3'/g'
 			else
-				echo "You must supply a valid whole number for $2"
+				echo -e "You must supply a ${CYAN}valid whole number${NONE} for $2"
 			fi
 			;;
 		"PULLDOWN")
@@ -80,7 +101,7 @@ sudo journalctl -u gpionext -f
 					set_flag 's/[ ]*--pulldown//g'
 					;;
 				*)
-					echo "You must supply true or false for $2 option";;
+					echo -e "You must supply ${CYAN}TRUE${NONE} or ${CYAN}FALSE${NONE} for $2 option";;
 			esac
 			;;
 		"DEV")
@@ -93,7 +114,7 @@ sudo journalctl -u gpionext -f
 					set_flag 's/[ ]*--dev//g'
 					;;
 				*)
-					echo "You must supply true or false for $2 option";;
+					echo -e "You must supply ${CYAN}TRUE${NONE} or ${CYAN}FALSE${NONE} for $2 option";;
 			esac
 			;;
 		"DEBUG")
@@ -106,7 +127,7 @@ sudo journalctl -u gpionext -f
 					set_flag 's/[ ]*--debug//g'
 					;;
 				*)
-					echo "You must supply true or false for $2 option";;
+					echo -e "You must supply ${CYAN}TRUE${NONE} or ${CYAN}FALSE${NONE} for $2 option";;
 			esac
 			;;
 		*)
@@ -122,18 +143,20 @@ if ! [[ "$1" == "HELP" ]]; then
 fi
 echo "You can control the GPIOnext daemon using the following commands: 
 
-- gpionext start		-> Start daemon						
-- gpionext stop		-> Stop daemon until reboot or gpionext start is called						
-- gpionext config	-> Run gpionext config						
-- gpionext disable	-> Stop daemon/Disable auto-start on boot (type gpionext start to re-enable auto-start)						
-- gpionext journal	-> Display any system output 
+- gpionext start				-> Enable + Start daemon						
+- gpionext stop					-> Stop daemon until reboot or gpionext start is called
+- gpionext reload				-> Reload daemon
+- gpionext config				-> Run gpionext config						
+- gpionext disable				-> Stop daemon/Disable auto-start on boot (type gpionext start to re-enable auto-start)						
+- gpionext journal				-> Display any system output 
+- gpionext test [1-4]				-> run jstest for gpionext virtual controller
 -------------------------------------------------------------------------------------------------------------------------------
 - gpionext set combo_delay [milliseconds]	-> Delay in milliseconds to wait for additional buttons to be pressed for combos						
 - gpionext set debounce [milliseconds]		-> Delay in milliseconds to wait to avoid multiple accidental presses					
 - gpionext set pins [default | pin numbers]	-> default = all available pins or comma separated pin numbers (ex. 3,5,7,11,40)					
-- gpionext set pulldown [true | false]			-> set pins to use pulldown resistors instead of pull up (excludes pins 3 + 5)		
-- gpionext set dev [true | false]					-> output information to console while program in use (use 'gpionext journal' to view)
-- gpionext set debug [true | false]				-> output information to gpionext/logFile.txt
+- gpionext set pulldown [true | false]		-> set pins to use pulldown resistors instead of pull up (excludes pins 3 + 5)		
+- gpionext set dev [true | false]		-> output information to console while program in use (use 'gpionext journal' to view)
+- gpionext set debug [true | false]		-> output information to gpionext/logFile.txt
 
 						"
 
@@ -141,3 +164,4 @@ echo "You can control the GPIOnext daemon using the following commands:
 esac
 # set case match back to default
 shopt -u nocasematch
+
