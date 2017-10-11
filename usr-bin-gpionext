@@ -40,6 +40,11 @@ sudo systemctl daemon-reload
 sudo systemctl start gpionext
 ;;
 
+"UPDATE")
+echo -e "${CYAN}Starting Update...${NONE}"
+sudo bash ~/GPIOnext/update.sh
+;;
+
 "JOURNAL")
 if ! [[ $(grep "\-\-dev" /lib/systemd/system/gpionext.service) ]]; then
 	echo "use 'gpionext set dev true' before running this command to get more information"
