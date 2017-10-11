@@ -78,6 +78,7 @@ class Axis( AbstractEvent ):
 		if self.isPressed:
 			self.isPressed = 0
 			self.injector.write( self.command[0], self.command[1], 0 )
+			self.injector.syn()
 		
 class Button( AbstractEvent ):
 	''' Joystick Button Event '''
@@ -95,6 +96,7 @@ class Button( AbstractEvent ):
 		if self.isPressed:
 			self.isPressed = 0
 			self.injector.write(e.EV_KEY, self.command, 0)
+			self.injector.syn()
 		
 class Key( AbstractEvent ):
 	''' Keyboard Event '''
@@ -124,6 +126,7 @@ class Key( AbstractEvent ):
 		if self.isPressed:
 			self.isPressed = 0
 			self.injector.write(e.EV_KEY, self.command, 0)
+			self.injector.syn()
 		
 class Command( AbstractEvent ):
 	''' Event for sending custom commands '''
