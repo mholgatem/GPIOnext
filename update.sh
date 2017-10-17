@@ -28,6 +28,12 @@ if ! [[ "$1" == "-noupdate" ]]; then
 fi
 shopt -u nocasematch
 
+# create bash custom commands
+cp $SCRIPTPATH"/usr-bin-gpionext" /usr/bin/gpionext
+config="CONFIG_PATH=${SCRIPTPATH}/config_manager.py"
+sed -i '1s#^#'$config'\n#g' /usr/bin/gpionext
+chmod 777 /usr/bin/gpionext
+
 sudo systemctl stop gpionext
 sudo systemctl daemon-reload
 sudo systemctl start gpionext
