@@ -69,6 +69,7 @@ class Axis( AbstractEvent ):
 	def press( self ):
 		self.isPressed = time.time()
 		self.injector.write( *self.command )
+		self.injector.syn()
 		self.waitForRelease()
 		
 	def hold( self ):
@@ -89,6 +90,7 @@ class Button( AbstractEvent ):
 	def press( self ):
 		self.isPressed = time.time()
 		self.injector.write(e.EV_KEY, self.command, 1)
+		self.injector.syn()
 		self.waitForRelease()
 		
 		
@@ -108,6 +110,7 @@ class Key( AbstractEvent ):
 	def press( self ):
 		self.isPressed = time.time()
 		self.injector.write(e.EV_KEY, self.command, 1)
+		self.injector.syn()
 		try:
 			self.holdTimer.start()
 		except:
@@ -273,7 +276,6 @@ class Device:
 					threading.Thread( target=currentEvent.press ).start()
 					if self.queue:
 						self.queue.pop( 0 )
-					self.injector.syn()
 					time.sleep( self.comboDelay )
 			except IndexError:
 				pass	
