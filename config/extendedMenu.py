@@ -121,7 +121,7 @@ class MultiSelect(CursesMenu):
 				item.text = ('[X] ' if item.checked else '[ ] ') + item.defaultText
 				self.items[self.current_option] = item
 				self.draw()
-		elif user_input in (curses.KEY_RIGHT, ord("\n")):
+		elif user_input in {curses.KEY_ENTER, 10, 13}:
 			self.select_many()
 
 		return user_input
