@@ -318,7 +318,7 @@ class CursesMenu(object):
 			self.go_down()
 		elif user_input == curses.KEY_UP:
 			self.go_up()
-		elif user_input in (curses.KEY_ENTER, ord("\n")):
+		elif user_input in {curses.KEY_ENTER, 10, 13}:
 			self.select()
 
 		return user_input
