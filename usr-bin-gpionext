@@ -27,7 +27,8 @@ sudo systemctl start gpionext
 ;;
 
 "CONFIG")
-sudo python3 $CONFIG_PATH
+#Run config with any supplied arguments
+sudo python3 $CONFIG_PATH "${@:2}"
 ;;
 
 "DISABLE")
