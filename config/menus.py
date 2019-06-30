@@ -34,7 +34,7 @@ def showMainMenu():
 	options = DEVICE_LIST + ['Clear Device']
 	choice = SelectionMenu.get_selection( 
 								strings = options,
-								title = 'GPioneer Config', 
+								title = 'GPIOnext Config', 
 								subtitle = 'Which virtual device do you want to CONFIGURE?'
 								)
 	try:
