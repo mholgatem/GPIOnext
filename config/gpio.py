@@ -53,10 +53,14 @@ class pin:
 		self.pull = pull
 		self.bit = ( 1 << number )
 		GPIO.setup(number, GPIO.IN, pull_up_down=pull)
-		GPIO.add_event_detect(	self.number, 
-											GPIO.BOTH, 
-											callback = self.set_bitmask,
-											bouncetime = args.debounce)
+		try:
+			GPIO.add_event_detect(	self.number, 
+						GPIO.BOTH, 
+						callback = self.set_bitmask,
+						bouncetime = args.debounce)
+		except RuntimeError:
+			print(f"Can't add edge detection for pin {self.number}(pin is already in use). Skipping.")
+	
 	
 	def set_bitmask( self, channel ):
 		global bitmask
