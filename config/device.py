@@ -276,7 +276,6 @@ class Device:
 					threading.Thread( target=currentEvent.press ).start()
 					if self.queue:
 						self.queue.pop( 0 )
-					time.sleep( self.comboDelay )
 			except IndexError:
 				pass	
 				
