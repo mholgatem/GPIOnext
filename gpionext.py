@@ -85,7 +85,7 @@ class GPIOnext:
 		
 	def set_args( self ):
 		self.args.pins = [ int(x) for x in self.args.pins.split(',') ]
-		self.args.combo_delay = (self.args.debounce + self.args.combo_delay) / 1000
+		self.args.combo_delay = self.args.combo_delay / 1000
 		if self.args.debug:
 			__location__ = os.path.realpath( os.path.join(os.getcwd(), os.path.dirname(__file__)) )
 			self.args.log = open( os.path.join(__location__, 'logFile.txt'),'w' ) 
