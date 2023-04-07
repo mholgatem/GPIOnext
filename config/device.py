@@ -246,7 +246,7 @@ class Device:
 		for event in self.pinEvents[ channel ]:
 			if event.bitmaskIn( gpioBitmask ):
 				with self.queueLock:
-				    self.queue.append( event )
+					self.queue.append( event )
 				gpioBitmask &= ~event.bitmask
 		# start queue processing
 		if not self.processing:
