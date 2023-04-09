@@ -158,6 +158,7 @@ class Device:
 		#Every event is called based on the pins it contains
 		self.pinEvents = { pin:[] for pin in AVAILABLE_PINS }
 		self.queue = []
+		self.queueLock = threading.Lock()
 		self.processing = False
 		self.comboDelay = args.combo_delay
 		self.processTimer = threading.Timer( self.comboDelay, self.processQueue )
@@ -244,7 +245,8 @@ class Device:
 	def pressEvents( self, gpioBitmask, channel ):
 		for event in self.pinEvents[ channel ]:
 			if event.bitmaskIn( gpioBitmask ):
-				self.queue.append( event )
+				with self.queueLock:
+					self.queue.append( event )
 				gpioBitmask &= ~event.bitmask
 		# start queue processing
 		if not self.processing:
@@ -260,25 +262,26 @@ class Device:
 		''' 
 			This method processes press events as they enter the queue
 		'''
-		while self.queue:
-			try:
-				currentEvent = self.queue[ 0 ]
-				currentBitmask = currentEvent.bitmask
-				for event in self.queue[ 1: ]:
-					# check if button is part of combo press
-					if currentEvent.bitmaskIn( event.bitmask ):
-						# remove currentEvent
-						self.queue.pop(0)
-						break
-				else:
-					# run the method
-					self.DEBUG( 'Press ' + currentEvent.name )
-					threading.Thread( target=currentEvent.press ).start()
-					if self.queue:
-						self.queue.pop( 0 )
-					time.sleep( self.comboDelay )
-			except IndexError:
-				pass	
+
+		while True:
+			with self.queueLock:
+				if not self.queue:
+					break
+				currentEvent = self.queue.pop(0)
+
+				try:
+					currentBitmask = currentEvent.bitmask
+					for event in self.queue:
+						# check if button is part of combo press
+						if currentEvent.bitmaskIn( event.bitmask ):
+							break
+					else:
+						# run the method
+						self.DEBUG( 'Press ' + currentEvent.name )
+						threading.Thread( target=currentEvent.press ).start()
+						
+				except IndexError:
+					pass	
 				
 		self.processTimer = threading.Timer( self.comboDelay, self.processQueue )
 		self.processing = False
