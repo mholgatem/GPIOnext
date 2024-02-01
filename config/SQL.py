@@ -43,7 +43,7 @@ def updateEntry( entryDict ):
 	global SQL, sqlCursor
 	query = ('INSERT or REPLACE INTO GPIOnext '
 					'(id, device, name, type, command, pins) '
-					'VALUES (:id, :device, :name, :type, :command, :pins)')
+					'VALUES (:id, :device, :name, :type, :command, :pins, :mode)')
 	sqlCursor.execute( query, entryDict )
 	SQL.commit()
 
@@ -57,8 +57,8 @@ def deleteEntry( deleteDict ):
 def createDevice( device ):
 	global SQL, sqlCursor
 	query = ('INSERT INTO GPIOnext '
-					'(device, name, type, command, pins) '
-					'VALUES (?,?,?,?,?)')
+					'(device, name, type, command, pins, mode) '
+					'VALUES (?,?,?,?,?,?)')
 	sqlCursor.executemany( query, device )
 	SQL.commit()
 	
@@ -81,7 +81,14 @@ def init():
 	sqlCursor.execute( 'CREATE TABLE IF NOT EXISTS GPIOnext ' 
 									'(id INTEGER PRIMARY KEY AUTOINCREMENT '
 									'UNIQUE, device TEXT, name TEXT, '
-									'type TEXT, command TEXT, pins TEXT)')
+									'type TEXT, command TEXT, pins TEXT, mode TEXT)')
+	# Check if table has the column mode and add it if not
+	
+	sqlCursor.execute( 'PRAGMA table_info(GPIOnext)' )
+	columns = sqlCursor.fetchall()
+	if len( columns ) < 7:
+		sqlCursor.execute( 'ALTER TABLE GPIOnext ADD COLUMN mode TEXT' )
+
 	SQL.commit()
 
 

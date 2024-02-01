@@ -4,7 +4,7 @@ import threading
 from datetime import datetime
 from evdev import UInput, AbsInfo, ecodes as e
 from config.constants import *
-from config import gpio
+from config import gpio, spi
 
 '''
 ---------------------------------------------------------
@@ -23,7 +23,8 @@ class AbstractEvent:
 		self.bitmask = 0
 		self.injector = None
 		self.pins = eval(entry['pins'])
-		
+		self.mode = eval(entry['mode'])
+
 		if type( self.pins ) == int:
 			self.pins = ( self.pins, )
 		for pin in self.pins:
@@ -60,15 +61,25 @@ class Axis( AbstractEvent ):
 	''' Joystick Axis Event '''
 	def __init__( self, entry ):
 		super().__init__( entry )
-		self.command = eval( self.command )
+		command = self.command
+
+		if self.mode == 1:
+			value = spi.pins[ self.pins[0] ].value
+			command = '{0}{1})'.format(command, value)
+			self.value = (JOYSTICK_AXIS, 0)
+
+		self.command = eval( command )
 		self.value = (self.command[1], JOYSTICK_AXIS)
-		self.hasPressEvent = True
-		self.hasHoldEvent = False
-		self.hasReleaseEvent = True
+
 		
 	def press( self ):
 		self.isPressed = time.time()
-		self.injector.write( *self.command )
+		if self.mode == 0:
+			self.injector.write( *self.command )
+		elif self.mode == 1:
+			value = spi.pins[ self.pins[0] ].value
+			command = '{0}{1})'.format(command, value)
+			self.injector.write( *command )
 		self.injector.syn()
 		self.waitForRelease()
 		
@@ -242,12 +253,17 @@ class Device:
 				print( msg )
 		
 	# This event gets registered with gpio.py
-	def pressEvents( self, gpioBitmask, channel ):
-		for event in self.pinEvents[ channel ]:
-			if event.bitmaskIn( gpioBitmask ):
-				with self.queueLock:
-					self.queue.append( event )
-				gpioBitmask &= ~event.bitmask
+	def pressEvents( self, gpioBitmask, channel, mode=0 ):
+
+		if mode == 1:
+			with self.queueLock:
+				self.queue.append( event )
+		elif mode == 0:
+			for event in self.pinEvents[ channel ]:
+				if event.bitmaskIn( gpioBitmask ):
+					with self.queueLock:
+						self.queue.append( event )
+					gpioBitmask &= ~event.bitmask
 		# start queue processing
 		if not self.processing:
 			self.processing = True
@@ -270,7 +286,6 @@ class Device:
 				currentEvent = self.queue.pop(0)
 
 				try:
-					currentBitmask = currentEvent.bitmask
 					for event in self.queue:
 						# check if button is part of combo press
 						if currentEvent.bitmaskIn( event.bitmask ):

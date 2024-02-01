@@ -5,7 +5,7 @@ import os
 import signal
 import sys
 import time
-from config import gpio, SQL
+from config import gpio, SQL, spi
 from config.constants import *
 from datetime import datetime
 
@@ -38,6 +38,26 @@ parser.add_argument('--debug',
 							dest='debug', default = False, action='store_true',
 							help='Print data for debugging purposes')
 								
+parser.add_argument('--spi_channels', 
+							metavar = '2', type = int,
+							default = 2,
+							help='Number of SPI channels to watch')
+
+parser.add_argument('--spi_busNumber', 
+							metavar = '0', type = int,
+							default = 0,
+							help='SPI Bus Number')
+
+parser.add_argument('--spi_deviceNumber', 
+							metavar = '0', type = int,
+							default = 0,
+							help='SPI Device Number')
+
+parser.add_argument('--spi_axis_threshold', 
+							metavar = '25', type = int,
+							default = 25,
+							help='SPI Axis Threshold Value (0-255)')
+
 args = parser.parse_args()
 
 	
@@ -52,9 +72,11 @@ class GPIOnext:
 		self.args = args
 		self.set_args( )
 		gpio.setupGPIO( self.args )
+		spi.setupSPI()
 		SQL.init()
 		self.devices = SQL.getDevices( DEVICE_LIST, self.args )
 		gpio.registerDevices( self.devices )
+		spi.registerDevices( self.devices )
 		self.main()
 
 	def reload (self, signal, frame):
@@ -62,12 +84,15 @@ class GPIOnext:
 		self.DEBUG( "Received Reload Signal. Reloading GPIOnext!" )
 		self.DEBUG( addSeparator = True )
 		gpio.cleanup()
+		spi.cleanup()
 		importlib.reload( gpio )
 		importlib.reload( SQL )
 		gpio.setupGPIO( self.args )
+		spi.setupSPI()
 		SQL.init()
 		self.devices = SQL.getDevices( DEVICE_LIST, self.args )
 		gpio.registerDevices( self.devices )
+		spi.registerDevices( self.devices )
 		#self.main()
 		
 	def signal_handler(self, signal, frame):
@@ -79,6 +104,7 @@ class GPIOnext:
 			device.injector.close()
 		self.DEBUG("Cleanup GPIO Pins")
 		gpio.cleanup()
+		spi.cleanup()
 		print()
 		print ('Kaaaaahhhnn!')
 		sys.exit(0)

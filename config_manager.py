@@ -7,12 +7,11 @@ import re
 import subprocess
 import sys
 import time
-import sqlite3
 import signal
 import readline
 from datetime import datetime
 from evdev import ecodes as e
-from config import gpio, menus, SQL
+from config import gpio, menus, SQL, spi
 from config.constants import *
 
 
@@ -39,6 +38,31 @@ parser.add_argument('--debug',
 							dest='debug', default = False, action='store_true',
 							help='Print data for debugging purposes')
 								
+parser.add_argument('--pins', 
+							metavar = '3,5,7,11', type = str,
+							default = AVAILABLE_PINS_STRING,
+							help='Comma delimited pin numbers to watch')
+
+parser.add_argument('--spi_channels', 
+							metavar = '2', type = int,
+							default = 2,
+							help='Number of SPI channels to watch')
+
+parser.add_argument('--spi_busNumber', 
+							metavar = '0', type = int,
+							default = 0,
+							help='SPI Bus Number')
+
+parser.add_argument('--spi_deviceNumber', 
+							metavar = '0', type = int,
+							default = 0,
+							help='SPI Device Number')
+
+parser.add_argument('--spi_axis_threshold', 
+							metavar = '25', type = int,
+							default = 25,
+							help='SPI Axis Threshold Value (0-255)')
+
 args = parser.parse_args()
 	
 	
@@ -79,10 +103,13 @@ class ConfigurationManager:
 		
 		gpio.pinPressMethods.append( self.setTimer )
 		gpio.pinReleaseMethods.append( self.clearTimer )
+		spi.pinPastThresholdMethods.append(self.setTimer)
+		spi.pinReleaseMethods.append(self.clearTimer)
 		
 		self.set_args()
 		SQL.init()
 		gpio.setupGPIO( self.args )		
+		spi.setupSPI(self.args)
 		self.getControllerType()
 
 	def DEBUG(self, msg = '', addSeparator = False):
@@ -108,6 +135,7 @@ class ConfigurationManager:
 		self.DEBUG( "Shutting down. Received signal {0}".format( signal ))
 		self.DEBUG("Cleanup GPIO Pins")
 		gpio.cleanup()
+		spi.cleanup()
 		print()
 		print ('Kaaaaahhhnn!')
 		print()
@@ -133,6 +161,7 @@ class ConfigurationManager:
 		# If in main menu and user selects 'Exit'
 		if currentDevice == None:
 			gpio.cleanup()
+			spi.cleanup()
 			print("Type: 'gpionext start' to run the daemon") 
 			sys.exit(0)
 
@@ -156,6 +185,14 @@ class ConfigurationManager:
 			if self.timeout and self.timeout < time.time(): 
 				self.timeout = None
 				return gpio.bitmaskToList()
+			time.sleep(poll_time)
+
+	def wait_for_spi( self, poll_time = 0.05 ):
+		self.timeout = None
+		while True:
+			if self.timeout and self.timeout < time.time():
+				self.timeout = None 
+				return spi.bitmaskToList()
 			time.sleep(poll_time)
 	
 	def waitForButtonRelease( self ):
@@ -186,7 +223,7 @@ class ConfigurationManager:
 			pressed = ', '.join( map(str, pressed) )
 			print( '- Pins(s):', pressed )
 			self.waitForButtonRelease()
-			device.append( (deviceName, cmdName, 'KEY', command, pressed) )
+			device.append( (deviceName, cmdName, 'KEY', command, pressed, 0) )
 		
 		# Save to Database
 		print( 'Saving Configuration!' )
@@ -254,6 +291,19 @@ class ConfigurationManager:
 		cmd['device'] = 'Commands'
 		SQL.updateEntry( cmd )
 	
+	def defineAxisSPI( self, direction, dpad, deviceName, offset = 0 ):
+		cmdName = '{0} {1}'.format( direction, dpad + 1 )
+		colorDirection = pcolor( 'cyan', direction )
+		colorDpad = pcolor( 'fuschia', dpad + 1 )
+		print( 'Hold {0} on Dpad/Joystick {1}'.format( colorDirection, colorDpad), end = ' ')
+		sys.stdout.flush()
+		pressed =  self.wait_for_pin()
+		pressed = '-1, ' + ', '.join( map(str, pressed) )
+		print( '- Pin(s):', pressed )
+		self.waitForButtonRelease()
+		command = '(e.EV_ABS, {0}, '.format( dpad * 2 + offset )
+		return deviceName, cmdName, 'AXIS', command, pressed, 1
+
 	def defineAxis( self, direction, dpad, deviceName, offset = 0 ):
 		cmdName = '{0} {1}'.format( direction, dpad + 1 )
 		colorDirection = pcolor( 'cyan', direction )
@@ -269,7 +319,7 @@ class ConfigurationManager:
 		else:
 			value = JOYSTICK_AXIS.min
 		command = '(e.EV_ABS, {0}, {1})'.format( dpad * 2 + offset, value )
-		return deviceName, cmdName, 'AXIS', command, pressed
+		return deviceName, cmdName, 'AXIS', command, pressed, 0
 	
 	
 	def configureJoypad( self, currentDevice ):
@@ -279,13 +329,28 @@ class ConfigurationManager:
 		device = [] # Append new controls to this list
 		deviceName = currentDevice['name'] # Current controller being configured
 		
+		print( 'What Mode do you want for your Joystick? (GPIO:0, SPI:1)', end = ' ')
+		sys.stdout.flush()
+
+		# Get input from user's keyboard (stdin) and see if it is a 0 or 1
+		mode = input()
+		
 		# First, Configure Joysticks
-		for dpad in range( currentDevice['axisCount'] ):
+		if mode == '1':
+			for dpad in range( currentDevice['axisCount'] ):
 			# Define Axes
-			device.append( self.defineAxis("UP", dpad, deviceName, offset=1) )
-			device.append( self.defineAxis("DOWN", dpad, deviceName, offset=1) )
-			device.append( self.defineAxis("LEFT", dpad, deviceName) )
-			device.append( self.defineAxis("RIGHT", dpad, deviceName) )
+				device.append( self.defineAxisSPI("UP", dpad, deviceName, offset=1) )
+				device.append( self.defineAxisSPI("DOWN", dpad, deviceName, offset=1) )
+				device.append( self.defineAxisSPI("LEFT", dpad, deviceName) )
+				device.append( self.defineAxisSPI("RIGHT", dpad, deviceName) )
+
+		elif mode == '0':
+			for dpad in range( currentDevice['axisCount'] ):
+				# Define Axes
+				device.append( self.defineAxis("UP", dpad, deviceName, offset=1) )
+				device.append( self.defineAxis("DOWN", dpad, deviceName, offset=1) )
+				device.append( self.defineAxis("LEFT", dpad, deviceName) )
+				device.append( self.defineAxis("RIGHT", dpad, deviceName) )
 
 		# Second, Configure Buttons
 		for button in currentDevice['buttons']:
@@ -298,7 +363,7 @@ class ConfigurationManager:
 			pressed = ', '.join( map(str, pressed) )
 			print( '- Pins(s):', pressed )
 			self.waitForButtonRelease()
-			device.append( (deviceName, cmdName, 'BUTTON', command, pressed) )
+			device.append( (deviceName, cmdName, 'BUTTON', command, pressed, 0) )
 		
 		# Save to Database
 		print( 'Saving Configuration!' )
