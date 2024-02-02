@@ -197,9 +197,10 @@ class Device:
 					inputType = Command( entry )
 				self.peripherals.append( inputType )
 				
-				for pin in inputType.pins:
-					self.pinEvents[ pin ].append( inputType )
-					self.pinEvents[ pin ].sort( key = lambda x: len( x.pins ), reverse = True )
+				if inputType.mode == 0:
+					for pin in inputType.pins:
+						self.pinEvents[ pin ].append( inputType )
+						self.pinEvents[ pin ].sort( key = lambda x: len( x.pins ), reverse = True )
 					
 			
 			self.peripherals.sort( key = lambda x: len( x.pins ), reverse = True )
