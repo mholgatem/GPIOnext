@@ -31,6 +31,8 @@ spi.setupSPI(args)
 CLEAR_LINE= '\x1b[2K'
 LINE_UP = '\x1b[1A'
 
+print("Starting SPI Test")
+
 def main( self ):
     try:
         while True:
