@@ -20,9 +20,9 @@ running.set()
 
 def poll(running):
     while running.is_set():
-        for range in range(0, totalPins):
-            data = read(range)
-            pins[range].set_value(round((data - 512) / 2))
+        for p in range(0, totalPins):
+            data = read(p)
+            pins[p].set_value(round((data - 512) / 2))
         time.sleep(0.05)
 
 
