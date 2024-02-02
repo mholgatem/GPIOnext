@@ -37,10 +37,13 @@ def main( self ):
     try:
         while True:
             for p in spi.pins:
-                print(f"{CLEAR_LINE}{p}")
+                print(p)
             time.sleep( 0.5 )
             for p in spi.pins:
-                print(f"{LINE_UP}{CLEAR_LINE}", end='')
+                print(f"{LINE_UP}{CLEAR_LINE}", end="")
 
     except KeyboardInterrupt:
+        spi.close()
         pass
+
+main( None )
