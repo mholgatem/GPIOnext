@@ -72,7 +72,7 @@ class GPIOnext:
 		self.args = args
 		self.set_args( )
 		gpio.setupGPIO( self.args )
-		spi.setupSPI()
+		spi.setupSPI( self.args )
 		SQL.init()
 		self.devices = SQL.getDevices( DEVICE_LIST, self.args )
 		gpio.registerDevices( self.devices )
