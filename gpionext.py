@@ -88,7 +88,7 @@ class GPIOnext:
 		importlib.reload( gpio )
 		importlib.reload( SQL )
 		gpio.setupGPIO( self.args )
-		spi.setupSPI()
+		spi.setupSPI( selft.args )
 		SQL.init()
 		self.devices = SQL.getDevices( DEVICE_LIST, self.args )
 		gpio.registerDevices( self.devices )
