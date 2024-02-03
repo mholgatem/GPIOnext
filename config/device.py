@@ -66,7 +66,6 @@ class Axis( AbstractEvent ):
 		if self.mode == 1:
 			value = spi.pins[ self.pins[0] ].value
 			command = '{0}{1})'.format(command, value)
-			self.value = (JOYSTICK_AXIS, 0)
 
 		self.command = eval( command )
 		self.value = (self.command[1], JOYSTICK_AXIS)
@@ -76,12 +75,16 @@ class Axis( AbstractEvent ):
 		self.isPressed = time.time()
 		if self.mode == 0:
 			self.injector.write( *self.command )
+			self.injector.syn()
+			self.waitForRelease()
 		elif self.mode == 1:
 			value = spi.pins[ self.pins[0] ].value
 			# set the 4th value in the tuple to the current value of the axis
 			self.injector.write(self.command[0], self.command[1], value)
-		self.injector.syn()
-		self.waitForRelease()
+			self.injector.syn()
+
+			if value == 0:
+				self.release()
 		
 	def hold( self ):
 		pass
