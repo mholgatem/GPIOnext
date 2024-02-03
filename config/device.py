@@ -78,7 +78,7 @@ class Axis( AbstractEvent ):
 			self.injector.write( *self.command )
 		elif self.mode == 1:
 			value = spi.pins[ self.pins[0] ].value
-			command = '{0}{1})'.format(command, value)
+			command = '{0}{1})'.format(self.command, value)
 			self.injector.write( *command )
 		self.injector.syn()
 		self.waitForRelease()
