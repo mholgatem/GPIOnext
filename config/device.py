@@ -79,8 +79,7 @@ class Axis( AbstractEvent ):
 		elif self.mode == 1:
 			value = spi.pins[ self.pins[0] ].value
 			# set the 4th value in the tuple to the current value of the axis
-			self.command = (self.command[0], self.command[1], self.command[2], value)
-			self.injector.write( *self.command )
+			self.injector.write(self.command[0], self.command[1], value)
 		self.injector.syn()
 		self.waitForRelease()
 		
