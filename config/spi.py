@@ -23,7 +23,7 @@ def poll(running):
         for p in range(0, totalPins):
             data = read(p)
             pins[p].set_value(round((data - 512) / 2))
-        time.sleep(0.05)
+        time.sleep(0.15)
 
 
 thread = threading.Thread(target=poll, args=(running,))
@@ -51,7 +51,7 @@ def registerDevices(devices):
     global pinPastThresholdMethods, pinReleaseMethods
     for device in devices:
         pinPastThresholdMethods.append(device.pressEvents)
-        pinChangeMethods.append(device.pressEvents)
+        # pinChangeMethods.append(device.pressEvents)
         # pinReleaseMethods.append( device.releaseEvents )
 
 
