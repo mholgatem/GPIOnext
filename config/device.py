@@ -81,10 +81,7 @@ class Axis( AbstractEvent ):
 			value = spi.pins[ self.pins[0] ].value
 			# set the 4th value in the tuple to the current value of the axis
 			self.injector.write(self.command[0], self.command[1], value)
-			self.injector.syn()
-
-			if value == 0:
-				self.release()
+			self.injector.syn()			
 		
 	def hold( self ):
 		pass
@@ -265,6 +262,35 @@ class Device:
 	# This event gets registered with gpio.py
 	def pressEvents( self, bitmask, channel, mode=0 ):
 
+		if mode == 1:		
+			for event in self.spiEvents[ channel ]:
+				if event.bitmaskIn( bitmask ):
+					with self.queueLock:
+						self.queue.append( event )
+					bitmask &= ~event.bitmask
+		elif mode == 0:
+			for event in self.pinEvents[ channel ]:
+				if event.bitmaskIn( bitmask ):
+					with self.queueLock:
+						self.queue.append( event )
+					bitmask &= ~event.bitmask
+		# start queue processing
+		if not self.processing:
+			self.processing = True
+			if not self.processTimer.is_alive():
+				try:
+					self.processTimer.start()
+				except RuntimeError:
+					# Timer already started
+					pass
+		
+	def pinReleaseMethods( self, bitmask, channel, mode=0 ):
+		''' 
+			This method processes release events as they enter the queue
+		'''
+
+		# wait for the queue to be empty
+		time.sleep(0.1)
 		if mode == 1:		
 			for event in self.spiEvents[ channel ]:
 				if event.bitmaskIn( bitmask ):

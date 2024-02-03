@@ -52,7 +52,7 @@ def registerDevices(devices):
     for device in devices:
         pinPastThresholdMethods.append(device.pressEvents)
         pinChangeMethods.append(device.pressEvents)
-        # pinReleaseMethods.append( device.releaseEvents )
+        pinReleaseMethods.append( device.releaseEvents )
 
 
 def onPinChange(channel):
