@@ -37,7 +37,7 @@ def main( self ):
     try:
         while True:
             for p in spi.pins:
-                print(p)
+                print(p, spi.bitmaskToList())
             time.sleep( 0.5 )
             for p in spi.pins:
                 print(f"{LINE_UP}{CLEAR_LINE}", end="")

@@ -103,8 +103,8 @@ class ConfigurationManager:
 		
 		gpio.pinPressMethods.append( self.setTimer )
 		gpio.pinReleaseMethods.append( self.clearTimer )
-		spi.pinPastThresholdMethods.append(self.setTimer)
-		spi.pinReleaseMethods.append(self.clearTimer)
+		spi.pinPastThresholdMethods.append( self.setTimer )
+		spi.pinReleaseMethods.append( self.clearTimer )
 		
 		self.set_args()
 		SQL.init()
@@ -187,6 +187,16 @@ class ConfigurationManager:
 				return gpio.bitmaskToList()
 			time.sleep(poll_time)
 
+	def waitForButtonRelease( self ):
+		startTime = time.time()
+		prompt = pcolor('cyan', 'Please release all buttons to continue')
+		while gpio.bitmask:
+			time.sleep(0.05)
+			if prompt:
+				if time.time() - startTime > 3:
+					print( prompt )
+					prompt = None
+		
 	def wait_for_spi( self, poll_time = 0.05 ):
 		self.timeout = None
 		while True:
@@ -195,10 +205,10 @@ class ConfigurationManager:
 				return spi.bitmaskToList()
 			time.sleep(poll_time)
 	
-	def waitForButtonRelease( self ):
+	def waitForSPIRelease( self ):
 		startTime = time.time()
-		prompt = pcolor('cyan', 'Please release all buttons to continue')
-		while gpio.bitmask:
+		prompt = pcolor('cyan', 'Please reset SPI to 0 to continue')
+		while spi.bitmask:
 			time.sleep(0.05)
 			if prompt:
 				if time.time() - startTime > 3:
@@ -297,8 +307,8 @@ class ConfigurationManager:
 		colorDpad = pcolor( 'fuschia', dpad + 1 )
 		print( 'Hold {0} on Dpad/Joystick {1}'.format( colorDirection, colorDpad), end = ' ')
 		sys.stdout.flush()
-		pressed =  self.wait_for_pin()
-		pressed = '-1, ' + ', '.join( map(str, pressed) )
+		pressed =  self.wait_for_spi()
+		pressed = ', '.join( map(str, pressed) )
 		print( '- Pin(s):', pressed )
 		self.waitForButtonRelease()
 		command = '(e.EV_ABS, {0}, '.format( dpad * 2 + offset )

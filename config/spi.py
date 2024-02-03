@@ -124,6 +124,8 @@ class pin:
         elif self.pressed:
             self.pressed = False
             self.set_bitmask(self.number)
+        else:
+            self.value = 0
 
     def set_bitmask(self, channel):
         global bitmask
@@ -137,4 +139,4 @@ class pin:
         onPinChange(channel)
         
     def __str__(self):
-        return 'Channel {0} - Value {1}'.format(self.number, self.value)
+        return 'Channel {0} - Value {1} '.format(self.number, self.value)
