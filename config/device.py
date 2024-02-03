@@ -168,6 +168,7 @@ class Device:
 
 		#Every event is called based on the pins it contains
 		self.pinEvents = { pin:[] for pin in AVAILABLE_PINS }
+		self.spiEvents = { pin:[] for pin in range(0, spi.totalPins) }
 		self.queue = []
 		self.queueLock = threading.Lock()
 		self.processing = False
@@ -197,6 +198,11 @@ class Device:
 					inputType = Command( entry )
 				self.peripherals.append( inputType )
 				
+				if inputType.mode == 1:
+					for pin in inputType.pins:
+						self.spiEvents[ pin ].append( inputType )
+						self.spiEvents[ pin ].sort( key = lambda x: len( x.pins ), reverse = True )
+
 				if inputType.mode == 0:
 					for pin in inputType.pins:
 						self.pinEvents[ pin ].append( inputType )
@@ -254,17 +260,20 @@ class Device:
 				print( msg )
 		
 	# This event gets registered with gpio.py
-	def pressEvents( self, gpioBitmask, channel, mode=0 ):
+	def pressEvents( self, bitmask, channel, mode=0 ):
 
-		if mode == 1:
-			with self.queueLock:
-				self.queue.append( event )
-		elif mode == 0:
-			for event in self.pinEvents[ channel ]:
-				if event.bitmaskIn( gpioBitmask ):
+		if mode == 1:		
+			for event in self.spiEvents[ channel ]:
+				if event.bitmaskIn( bitmask ):
 					with self.queueLock:
 						self.queue.append( event )
-					gpioBitmask &= ~event.bitmask
+					bitmask &= ~event.bitmask
+		elif mode == 0:
+			for event in self.pinEvents[ channel ]:
+				if event.bitmaskIn( bitmask ):
+					with self.queueLock:
+						self.queue.append( event )
+					bitmask &= ~event.bitmask
 		# start queue processing
 		if not self.processing:
 			self.processing = True
