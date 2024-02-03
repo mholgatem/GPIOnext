@@ -66,6 +66,7 @@ class Axis( AbstractEvent ):
 		if self.mode == 1:
 			value = spi.pins[ self.pins[0] ].value
 			command = '{0}{1})'.format(command, value)
+			print( 'Axis value ', value )
 
 		self.command = eval( command )
 		self.value = (self.command[1], JOYSTICK_AXIS)
@@ -262,12 +263,12 @@ class Device:
 	# This event gets registered with gpio.py
 	def pressEvents( self, bitmask, channel, mode=0 ):
 
+		self.DEBUG( 'Processing press events')
 		if mode == 1:		
-			for event in self.spiEvents[ channel ]:
-				if event.bitmaskIn( bitmask ):
-					with self.queueLock:
-						self.queue.append( event )
-					bitmask &= ~event.bitmask
+			for event in self.spiEvents[ channel ]:				
+				with self.queueLock:
+					self.queue.append( event )
+				
 		elif mode == 0:
 			for event in self.pinEvents[ channel ]:
 				if event.bitmaskIn( bitmask ):
@@ -284,19 +285,19 @@ class Device:
 					# Timer already started
 					pass
 		
-	def pinReleaseMethods( self, bitmask, channel, mode=0 ):
+	def releaseEvents( self, bitmask, channel, mode=0 ):
 		''' 
 			This method processes release events as they enter the queue
 		'''
 
 		# wait for the queue to be empty
-		time.sleep(0.1)
+		self.DEBUG( 'Processing release events')
+		time.sleep(0.5)
 		if mode == 1:		
-			for event in self.spiEvents[ channel ]:
-				if event.bitmaskIn( bitmask ):
-					with self.queueLock:
-						self.queue.append( event )
-					bitmask &= ~event.bitmask
+			for event in self.spiEvents[ channel ]:				
+				with self.queueLock:
+					self.queue.append( event )
+					
 		elif mode == 0:
 			for event in self.pinEvents[ channel ]:
 				if event.bitmaskIn( bitmask ):
@@ -331,7 +332,7 @@ class Device:
 							break
 					else:
 						# run the method
-						self.DEBUG( 'Press ' + currentEvent.name )
+						self.DEBUG( 'Press ' + currentEvent.name )						
 						threading.Thread( target=currentEvent.press ).start()
 						
 				except IndexError:

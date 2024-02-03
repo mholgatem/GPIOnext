@@ -51,7 +51,7 @@ def registerDevices(devices):
     global pinPastThresholdMethods, pinReleaseMethods
     for device in devices:
         pinPastThresholdMethods.append(device.pressEvents)
-        pinChangeMethods.append(device.pressEvents)
+        # pinChangeMethods.append(device.pressEvents)
         pinReleaseMethods.append( device.releaseEvents )
 
 
@@ -70,7 +70,7 @@ def onPinPress(channel):
 def onPinRelease(channel):
     global pinReleaseMethods, bitmask
     for method in pinReleaseMethods:
-        method(bitmask, channel)
+        method(bitmask, channel, mode=1)
 
 
 def bitmaskContains(value):
@@ -124,6 +124,7 @@ class pin:
 
         elif self.pressed:
             self.pressed = False
+            self.value = 0
             self.set_bitmask(self.number)
         else:
             self.value = 0
@@ -133,11 +134,11 @@ class pin:
 
         if self.pressed:
 
-            if bitmask & self.bit == self.bit:
-                onPinChange(channel)
-            else:
-                bitmask |= self.bit  # add channel
-                onPinPress(channel)
+            # if bitmask & self.bit == self.bit:
+            #     onPinChange(channel)
+            # else:
+            bitmask |= self.bit  # add channel
+            onPinPress(channel)
         else:
             bitmask &= ~(self.bit)  # remove channel
             onPinRelease(channel)
