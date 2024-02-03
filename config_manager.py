@@ -38,11 +38,6 @@ parser.add_argument('--debug',
 							dest='debug', default = False, action='store_true',
 							help='Print data for debugging purposes')
 								
-parser.add_argument('--pins', 
-							metavar = '3,5,7,11', type = str,
-							default = AVAILABLE_PINS_STRING,
-							help='Comma delimited pin numbers to watch')
-
 parser.add_argument('--spi_channels', 
 							metavar = '2', type = int,
 							default = 2,
