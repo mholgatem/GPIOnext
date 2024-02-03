@@ -51,13 +51,14 @@ def registerDevices(devices):
     global pinPastThresholdMethods, pinReleaseMethods
     for device in devices:
         pinPastThresholdMethods.append(device.pressEvents)
+        pinChangeMethods.append(device.pressEvents)
         # pinReleaseMethods.append( device.releaseEvents )
 
 
 def onPinChange(channel):
     global pinChangeMethods, bitmask
     for method in pinChangeMethods:
-        method(bitmask, channel)
+        method(bitmask, channel, mode=1)
 
 
 def onPinPress(channel):
@@ -131,8 +132,12 @@ class pin:
         global bitmask
 
         if self.pressed:
-            bitmask |= self.bit  # add channel
-            onPinPress(channel)
+
+            if bitmask & self.bit == self.bit:
+                onPinChange(channel)
+            else:
+                bitmask |= self.bit  # add channel
+                onPinPress(channel)
         else:
             bitmask &= ~(self.bit)  # remove channel
             onPinRelease(channel)
