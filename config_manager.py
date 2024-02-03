@@ -167,7 +167,7 @@ class ConfigurationManager:
 		else:
 			self.configureJoypad( currentDevice )
 			
-	def setTimer( self, bitmask, channel ):
+	def setTimer( self, bitmask, channel, mode=0 ):
 		holdTimeRequired = 1.0
 		self.timeout = time.time() + holdTimeRequired
 		
