@@ -70,7 +70,15 @@ class Axis( AbstractEvent ):
 		self.command = eval( command )
 		self.value = (self.command[1], JOYSTICK_AXIS)
 
-		
+	def waitForReleaseSPI(self):
+		while spi.bitmask & self.bitmask == self.bitmask:
+			value = spi.pins[ self.pins[0] ].value
+			# set the 4th value in the tuple to the current value of the axis
+			self.injector.write(self.command[0], self.command[1], value)
+			self.injector.syn()
+			time.sleep(0.03)
+		self.release()
+
 	def press( self ):
 		self.isPressed = time.time()
 		if self.mode == 0:
@@ -81,7 +89,8 @@ class Axis( AbstractEvent ):
 			value = spi.pins[ self.pins[0] ].value
 			# set the 4th value in the tuple to the current value of the axis
 			self.injector.write(self.command[0], self.command[1], value)
-			self.injector.syn()			
+			self.injector.syn()	
+			self.waitForReleaseSPI()		
 		
 	def hold( self ):
 		pass

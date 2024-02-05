@@ -119,8 +119,9 @@ class pin:
             
         self.value = value
         if abs(value) > threshold:
-            self.pressed = True
-            self.set_bitmask(self.number)
+            if not self.pressed:
+                self.pressed = True
+                self.set_bitmask(self.number)
 
         elif self.pressed:
             self.pressed = False
@@ -133,10 +134,6 @@ class pin:
         global bitmask
 
         if self.pressed:
-
-            # if bitmask & self.bit == self.bit:
-            #     onPinChange(channel)
-            # else:
             bitmask |= self.bit  # add channel
             onPinPress(channel)
         else:
