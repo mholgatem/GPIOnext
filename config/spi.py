@@ -19,6 +19,10 @@ running.set()
 
 
 def poll(running):
+    time.sleep(15) # wait for system to boot
+    spi.open(bus, device)
+    spi.max_speed_hz = 1000000  # 1MHz
+
     while running.is_set():
         for p in range(0, totalPins):
             data = read(p)
@@ -30,8 +34,6 @@ thread = threading.Thread(target=poll, args=(running,))
 
 
 def open():
-    spi.open(bus, device)
-    spi.max_speed_hz = 1000000  # 1MHz
     thread.start()
 
 
@@ -42,9 +44,9 @@ def read(channel=0):
 
 
 def close():
-    spi.close()
     running.clear()
     thread.join()
+    spi.close()
 
 
 def registerDevices(devices):
