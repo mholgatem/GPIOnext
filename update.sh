@@ -1,12 +1,12 @@
 #!/bin/bash
 VERSION="1.0"
 
-#get script path
+# get script path
 SCRIPT=$(readlink -f $0)
 SCRIPTPATH=`dirname $SCRIPT`
 cd $SCRIPTPATH
 
-#if not root user, restart script as root
+# if not root user, restart script as root
 if [ "$(whoami)" != "root" ]; then
 	echo "Switching to root user..."
 	sudo bash $SCRIPT $*
