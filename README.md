@@ -1,7 +1,7 @@
 <h1>GPIOnext</h1>
 <h6>A Python Based GPIO Controller</h6>
 
-<h6> *** Currently not compatible with Raspberry Pi 5! *** </h6>
+<h6> *** Currently not compatible with Raspberry Pi 5! Update Coming Soon!*** </h6>
 
 This is a GPIO controller that is fully compatible with RetroPie (and PiPlay). For anyone that is familiar with Adafruit's RetroGame Utility, this is very similar. The main difference being that this is user friendly and full featured.
 <h4>What's New?</h4>
