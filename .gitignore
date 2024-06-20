@@ -1,4 +1,5 @@
 *.pyc
+tests.ipynb
 config.db
 
 # Windows image file caches

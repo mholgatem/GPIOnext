@@ -4,7 +4,7 @@ import threading
 from datetime import datetime
 from evdev import UInput, AbsInfo, ecodes as e
 from config.constants import *
-from config import gpio
+from config import gpio, spi
 
 '''
 ---------------------------------------------------------
@@ -23,7 +23,8 @@ class AbstractEvent:
 		self.bitmask = 0
 		self.injector = None
 		self.pins = eval(entry['pins'])
-		
+		self.mode = eval(entry['mode'])
+
 		if type( self.pins ) == int:
 			self.pins = ( self.pins, )
 		for pin in self.pins:
@@ -60,17 +61,36 @@ class Axis( AbstractEvent ):
 	''' Joystick Axis Event '''
 	def __init__( self, entry ):
 		super().__init__( entry )
-		self.command = eval( self.command )
+		command = self.command
+
+		if self.mode == 1:
+			value = spi.pins[ self.pins[0] ].value
+			command = '{0}{1})'.format(command, value)
+
+		self.command = eval( command )
 		self.value = (self.command[1], JOYSTICK_AXIS)
-		self.hasPressEvent = True
-		self.hasHoldEvent = False
-		self.hasReleaseEvent = True
-		
+
+	def waitForReleaseSPI(self):
+		while spi.bitmask & self.bitmask == self.bitmask:
+			value = spi.pins[ self.pins[0] ].value
+			# set the 4th value in the tuple to the current value of the axis
+			self.injector.write(self.command[0], self.command[1], value)
+			self.injector.syn()
+			time.sleep(0.03)
+		self.release()
+
 	def press( self ):
 		self.isPressed = time.time()
-		self.injector.write( *self.command )
-		self.injector.syn()
-		self.waitForRelease()
+		if self.mode == 0:
+			self.injector.write( *self.command )
+			self.injector.syn()
+			self.waitForRelease()
+		elif self.mode == 1:
+			value = spi.pins[ self.pins[0] ].value
+			# set the 4th value in the tuple to the current value of the axis
+			self.injector.write(self.command[0], self.command[1], value)
+			self.injector.syn()	
+			self.waitForReleaseSPI()		
 		
 	def hold( self ):
 		pass
@@ -157,6 +177,7 @@ class Device:
 
 		#Every event is called based on the pins it contains
 		self.pinEvents = { pin:[] for pin in AVAILABLE_PINS }
+		self.spiEvents = { pin:[] for pin in range(0, spi.totalPins) }
 		self.queue = []
 		self.queueLock = threading.Lock()
 		self.processing = False
@@ -186,9 +207,15 @@ class Device:
 					inputType = Command( entry )
 				self.peripherals.append( inputType )
 				
-				for pin in inputType.pins:
-					self.pinEvents[ pin ].append( inputType )
-					self.pinEvents[ pin ].sort( key = lambda x: len( x.pins ), reverse = True )
+				if inputType.mode == 1:
+					for pin in inputType.pins:
+						self.spiEvents[ pin ].append( inputType )
+						self.spiEvents[ pin ].sort( key = lambda x: len( x.pins ), reverse = True )
+
+				if inputType.mode == 0:
+					for pin in inputType.pins:
+						self.pinEvents[ pin ].append( inputType )
+						self.pinEvents[ pin ].sort( key = lambda x: len( x.pins ), reverse = True )
 					
 			
 			self.peripherals.sort( key = lambda x: len( x.pins ), reverse = True )
@@ -242,12 +269,49 @@ class Device:
 				print( msg )
 		
 	# This event gets registered with gpio.py
-	def pressEvents( self, gpioBitmask, channel ):
-		for event in self.pinEvents[ channel ]:
-			if event.bitmaskIn( gpioBitmask ):
+	def pressEvents( self, bitmask, channel, mode=0 ):
+
+		self.DEBUG( 'Processing press events')
+		if mode == 1:		
+			for event in self.spiEvents[ channel ]:				
 				with self.queueLock:
 					self.queue.append( event )
-				gpioBitmask &= ~event.bitmask
+				
+		elif mode == 0:
+			for event in self.pinEvents[ channel ]:
+				if event.bitmaskIn( bitmask ):
+					with self.queueLock:
+						self.queue.append( event )
+					bitmask &= ~event.bitmask
+		# start queue processing
+		if not self.processing:
+			self.processing = True
+			if not self.processTimer.is_alive():
+				try:
+					self.processTimer.start()
+				except RuntimeError:
+					# Timer already started
+					pass
+		
+	def releaseEvents( self, bitmask, channel, mode=0 ):
+		''' 
+			This method processes release events as they enter the queue
+		'''
+
+		# wait for the queue to be empty
+		self.DEBUG( 'Processing release events')
+		time.sleep(0.5)
+		if mode == 1:		
+			for event in self.spiEvents[ channel ]:				
+				with self.queueLock:
+					self.queue.append( event )
+					
+		elif mode == 0:
+			for event in self.pinEvents[ channel ]:
+				if event.bitmaskIn( bitmask ):
+					with self.queueLock:
+						self.queue.append( event )
+					bitmask &= ~event.bitmask
 		# start queue processing
 		if not self.processing:
 			self.processing = True
@@ -270,14 +334,13 @@ class Device:
 				currentEvent = self.queue.pop(0)
 
 				try:
-					currentBitmask = currentEvent.bitmask
 					for event in self.queue:
 						# check if button is part of combo press
 						if currentEvent.bitmaskIn( event.bitmask ):
 							break
 					else:
 						# run the method
-						self.DEBUG( 'Press ' + currentEvent.name )
+						self.DEBUG( 'Press ' + currentEvent.name )						
 						threading.Thread( target=currentEvent.press ).start()
 						
 				except IndexError:
