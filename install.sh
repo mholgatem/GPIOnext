@@ -51,7 +51,7 @@ echo -e "${CYAN}${UNDERLINE}Installing Dependencies...${NONE}"
 echo
 
 sudo apt-get -y install python3 python3-pip python3-dev gcc
-sudo apt-get -y install sqlite3 joystick
+sudo apt-get -y install sqlite3 joystick python3-evdev
 
 echo "Debian version is: ${FUSCHIA}${UNDERLINE}$DEBIAN_VERSION - $DEBIAN_NAME${NONE}. Installing appropriate dependencies..."
 if bookworm_or_greater "$DEBIAN_VERSION"; then
@@ -60,8 +60,6 @@ if bookworm_or_greater "$DEBIAN_VERSION"; then
 else
     sudo apt-get -y install python3-rpi.gpio
 fi
-
-sudo pip3 install evdev
 
 # add gpionext.service to systemd
 file1=$SCRIPTPATH"/gpionext.service"
