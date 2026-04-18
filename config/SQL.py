@@ -29,16 +29,17 @@ def getDevice( deviceName, args ):
 
 def deleteDevice( device ):
 	global SQL, sqlCursor
-	query = ('DELETE FROM GPIOnext '
-					'where device == "{0}"').format( device )
-	sqlCursor.execute( query )
+	query = 'DELETE FROM GPIOnext WHERE device == :device'
+	sqlCursor.execute( query, (device,) )
 	SQL.commit()
 	
+
 def getDeviceRaw( deviceName ):
 	global SQL, sqlCursor
 	d = sqlCursor.execute( 'SELECT * FROM GPIOnext WHERE device LIKE (?)', (deviceName,) )
 	return d.fetchall()
 	
+
 def updateEntry( entryDict ):
 	global SQL, sqlCursor
 	query = ('INSERT or REPLACE INTO GPIOnext '
@@ -54,6 +55,7 @@ def deleteEntry( deleteDict ):
 	sqlCursor.execute( query, deleteDict )
 	SQL.commit()
 	
+
 def createDevice( device ):
 	global SQL, sqlCursor
 	query = ('INSERT INTO GPIOnext '
@@ -62,6 +64,7 @@ def createDevice( device ):
 	sqlCursor.executemany( query, device )
 	SQL.commit()
 	
+
 def getDatabasePath ( defaultPath = '/home/pi/gpionext/config/' ):
 	global SQL, sqlCursor
 	path = os.path.realpath( defaultPath )
@@ -83,5 +86,3 @@ def init():
 									'UNIQUE, device TEXT, name TEXT, '
 									'type TEXT, command TEXT, pins TEXT)')
 	SQL.commit()
-
-
