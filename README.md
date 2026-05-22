@@ -34,7 +34,7 @@ This interactive tool will guide you through:
 
 ---
 
-## 3. CLI Commands & Settings
+## CLI Commands & Settings
 
 GPIOnext provides a powerful CLI wrapper via the `gpionext` command.
 
