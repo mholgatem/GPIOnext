@@ -1,0 +1,47 @@
+[package]
+name = "gpionext_core"
+version = "0.1.0"
+edition = "2021"
+description = "Rust hot-path extension for GPIOnext: GPIO event dispatch, bitmask combo engine, uinput HID writes, i2c device drivers"
+license = "MIT"
+
+[lib]
+name = "gpionext_core"
+# cdylib produces the .so loaded by Python; rlib allows unit tests within Rust
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# PyO3: Python↔Rust bridge. extension-module feature required for .so builds.
+pyo3 = { version = "0.23", features = ["extension-module", "abi3-py311"] }
+
+# Rayon: fixed-size thread pool for combo resolution (replaces unbounded threading.Timer).
+rayon = "1.9"
+
+# parking_lot: faster Mutex/RwLock than std, important on low-power Pi 2B.
+parking_lot = "0.12"
+
+# C deps for GPIO and i2c — gated behind features so Phase 1 CI builds without them.
+# Enabled in Phase 2 once cross-compilation sysroots are confirmed.
+[target.'cfg(target_os = "linux")'.dependencies]
+# gpiocdev: pure-Rust GPIO character device bindings (no C library required at
+# build time — uses Linux ioctl directly). Feature-gated: --features gpio.
+gpiocdev = { version = "0.8", optional = true }
+
+# i2cdev: Linux i2c-dev ioctl wrapper for MCP23017 and ADS1115.
+# Feature-gated: enable with --features i2c
+i2cdev = { version = "0.6", optional = true }
+libc = "0.2"
+
+[features]
+default = []
+# gpio: enables the gpiocdev event loop (Phase 2)
+gpio = ["dep:gpiocdev"]
+# i2c: enables MCP23017 + ADS1115 + PCF8574 drivers (Phase 3)
+i2c = ["dep:i2cdev", "gpio"]
+
+[profile.release]
+# Strip debug symbols for smaller .so shipped in GitHub Releases
+strip = true
+opt-level = 3
+lto = true
+codegen-units = 1
