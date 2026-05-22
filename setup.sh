@@ -112,8 +112,7 @@ fi
 # Copy files to install path
 # ---------------------------------------------------------------------------
 
-echo -e "${CYAN}${UNDERLINE}Copying Legacy files...${NONE}"
-cp -r "${SCRIPTPATH}/"* "${INSTALL_PATH}/"
+echo -e "${CYAN}${UNDERLINE}Updating file permissions...${NONE}"
 chmod 755 "${INSTALL_PATH}/gpionext.py"
 chmod 755 "${INSTALL_PATH}/config_manager.py"
 
