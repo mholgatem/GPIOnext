@@ -6,7 +6,7 @@ This is a fully featured GPIO to HID controller Daemon that is fully compatible 
 <ul><li>Precompiled Rust Core for lower latency</li>
 <li>Support for popular I2C expanders (MCP23017 & PCF8574) adds virtual GPIO pins for all of your arcade needs</li>
 <li>Audio HAT auto detection - automatically detect audio HAT and keep GPIOnext from using those pins</li>
-<ul><li>Improved terminal configuration tool allows configuration even on "liste" OS's or over SSH/Xterm</li>
+<li>Improved terminal configuration tool allows configuration even on "lite" OS's or over SSH/Xterm</li>
 <li>supports matrix pin combinations for additional configurable buttons</li>
 <li><b>It supports system commands! (you can map volume/shutdown/etc to buttons)</b></li>
 </ul>
@@ -20,19 +20,19 @@ The easiest way to install GPIOnext is to use our bootstrap installer. This will
 
 ### Latest Version (Recommended)
 ```bash
-curl -sfL https://raw.githubusercontent.com/mholgatem/GPIOnext/main/install.sh | sudo bash
+curl -sfL https://raw.githubusercontent.com/mholgatem/GPIOnext/master/install.sh | sudo bash
 ```
 
 ### Specific Version
 If you need to install a specific version:
 ```bash
-curl -sfL https://raw.githubusercontent.com/mholgatem/GPIOnext/main/install.sh | sudo bash -s -- --version v0.1.0
+curl -sfL https://raw.githubusercontent.com/mholgatem/GPIOnext/master/install.sh | sudo bash -s -- --version v0.1.0
 ```
 
 ### Legacy Version
 To install the original Python-only implementation:
 ```bash
-curl -sfL https://raw.githubusercontent.com/mholgatem/GPIOnext/main/install.sh | sudo bash -s -- --version LEGACY
+curl -sfL https://raw.githubusercontent.com/mholgatem/GPIOnext/master/install.sh | sudo bash -s -- --version LEGACY
 ```
 
 ---
