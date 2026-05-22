@@ -1,4 +1,4 @@
-<h1>GPIOnext</h1>
+<h1>GPIOnext (Legacy Code)</h1>
 <h6>A Python Based GPIO Controller</h6>
 
 <h6> *** Now Compatible with Raspberry Pi 5 (Bookworm)!*** </h6>
