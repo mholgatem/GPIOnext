@@ -14,7 +14,7 @@ This is a GPIO controller that is fully compatible with RetroPie (and PiPlay). F
 <h4>How to install</h4>in terminal type:
 
 ```bash
-curl -sfL https://raw.githubusercontent.com/mholgatem/gpionext-dev/main/install.sh | sudo bash -s -- --version LEGACY
+curl -sfL https://raw.githubusercontent.com/mholgatem/GPIOnext/main/install.sh | sudo bash -s -- --version LEGACY
 ```
 That's it! The installer is still very much in the beta stage, so let me know if you have problems. But I have tested it on several clean raspbian/piplay images with no problem.
 
