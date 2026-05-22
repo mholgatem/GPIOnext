@@ -12,6 +12,7 @@ This is a GPIO controller that is fully compatible with RetroPie (and PiPlay). F
 <li><b>It supports system commands! (you can map volume/shutdown/etc to buttons)</b></li>
 </ul>
 <h4>How to install</h4>in terminal type:
+
 ```bash
 curl -sfL https://raw.githubusercontent.com/mholgatem/gpionext-dev/main/install.sh | sudo bash -s -- --version LEGACY
 ```
