@@ -6,7 +6,7 @@ This is a fully featured GPIO to HID controller Daemon that is fully compatible 
 <ul><li>Precompiled Rust Core for lower latency</li>
 <li>Support for popular I2C expanders (MCP23017 & PCF8574) adds virtual GPIO pins for all of your arcade needs</li>
 <li>Audio HAT auto detection - automatically detect audio HAT and keep GPIOnext from using those pins</li>
-<ul><li>Improved terminal configuration tool allows configuration even on "liste" OS's or over SSH/Xterm</li>
+<li>Improved terminal configuration tool allows configuration even on "lite" OS's or over SSH/Xterm</li>
 <li>supports matrix pin combinations for additional configurable buttons</li>
 <li><b>It supports system commands! (you can map volume/shutdown/etc to buttons)</b></li>
 </ul>
