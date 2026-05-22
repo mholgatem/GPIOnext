@@ -12,41 +12,52 @@ This is a GPIO controller that is fully compatible with RetroPie (and PiPlay). F
 <li><b>It supports system commands! (you can map volume/shutdown/etc to buttons)</b></li>
 </ul>
 <h4>How to install</h4>in terminal type:
-<pre>cd ~
-git clone https://github.com/mholgatem/GPIOnext.git
-bash GPIOnext/install.sh</pre>
+```bash
+curl -sfL https://raw.githubusercontent.com/mholgatem/gpionext-dev/main/install.sh | sudo bash -s -- --version LEGACY
+```
 That's it! The installer is still very much in the beta stage, so let me know if you have problems. But I have tested it on several clean raspbian/piplay images with no problem.
 
-<h4>How to use</h4> After the installer runs, you will be prompted to run the configuration tool. Just follow the command prompts to set up any controls that you want. After exiting, type 'gpionext start' to run the daemon in the background
-You can stop/start/run config from the command line simply by typing any of the following:
-<pre>gpionext stop
-gpionext start
-gpionext config</pre>
+### Basic Setup
+```bash
+gpionext config
+```
+This interactive tool will guide you through:
+- Detecting pressed pins.
+- Mapping pins to "Commands", "Keys", or "Joypad Buttons/Axes".
+- Setting up multi-button combos.
 
-<h2>GPIOnext Flags</h2>
+### Peripheral Types
+- **Button:** Triggers a standard joystick button (e.g., Button A, Start).
+- **Key:** Triggers a keyboard key with auto-repeat.
+- **Axis:** Maps pins to analog joystick directions (Up/Down/Left/Right).
+- **Command:** Executes a shell command when the button is pressed.
 
-**gpionext set combo_delay [#]** - the delay in milliseconds to allow for combos to be pressed
+---
 
-  * *default:* gpionext set combo_delay 50
-  
-**gpionext set pins [#,#,#|default]** - the pins that gpionext will configure and watch
+## 3. CLI Commands & Settings
 
-  * *default:* gpionext set pins default
-  * *example:* gpionext set pins 3,5,38,40
-  
-**gpionext set debounce [#]** - the delay in milliseconds to allow for button debounce
+GPIOnext provides a powerful CLI wrapper via the `gpionext` command.
 
-  * *default:* gpionext set debounce 1
-  
-**gpionext set pulldown [true|false]** - set gpio pulldown resistors instead of pullup
+### Daemon Management
+- `gpionext start`: Enable and start the background daemon.
+- `gpionext stop`: Stop the daemon.
+- `gpionext reload`: Send SIGHUP to the daemon to hot-reload the configuration without a full restart.
+- `gpionext disable`: Stop and disable the auto-start service.
 
-  * *default:* gpionext set pulldown false
-  
-**gpionext set debug [true|false]** - write output to /opt/gpionext/logFile.txt
+### Updates & Removal
+- `gpionext update`: Pull the latest source and binary from GitHub.
+- `gpionext update --version <version>`: Update to a specific version.
+- `gpionext remove`: Completely remove GPIOnext from the system, including `/opt/gpionext`, the systemd service, and udev rules.
 
-  * *default:* gpionext set debug false
-  
-**gpionext set dev [true|false]** - write output to console
+### Diagnostics
+- `gpionext journal`: Stream live log output from the daemon (Press Ctrl+C to exit).
+- `gpionext test [1-4]`: Run `jstest` on one of the four virtual joypads created by GPIOnext.
 
-  * *default:* gpionext set dev false
+### Global Settings
+Settings are applied immediately and will restart the daemon:
+- `gpionext set combo_delay <ms>`: The window (default 50ms) to detect multi-button combos.
+- `gpionext set key_hold_delay <ms>`: The delay (default 350ms) before keyboard auto-repeat starts.
+- `gpionext set debounce <ms>`: Button debounce time (default 1ms).
+- `gpionext set pulldown <true|false>`: Use internal pulldown resistors (default: false/pullup).
+- `gpionext set dev <true|false>`: Enable verbose logging to the system journal.
   
