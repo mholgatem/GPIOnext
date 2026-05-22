@@ -1,122 +1,112 @@
 #!/bin/bash
+# GPIOnext Legacy Bootstrap Installer
+# Downloads and extracts the Legacy version of GPIOnext and runs setup.sh
 
-#get script path
-SCRIPT=$(readlink -f $0)
-SCRIPTPATH=`dirname $SCRIPT`
-cd $SCRIPTPATH
+set -euo pipefail
 
-# if not root user, restart script as root
-if [ "$(whoami)" != "root" ]; then
-	echo "Switching to root user..."
-	sudo bash $SCRIPT $*
-	exit 1
-fi
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
 
-# set constants
-IP="$(ifconfig | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1')"
+INSTALL_PATH="/opt/gpionext"
+GITHUB_REPO="mholgatem/GPIOnext"
 NONE='\033[00m'
 CYAN='\033[36m'
-FUSCHIA='\033[35m'
-UNDERLINE='\033[4m'
+GREEN='\033[32m'
+RED='\033[31m'
+BOLD='\033[1m'
 
-shopt -s nocasematch
+# ---------------------------------------------------------------------------
+# Version Formatting (Always LEGACY for this script)
+# ---------------------------------------------------------------------------
 
-if ! [[ "$1" == "-noupdate" ]]; then
-	# run update
-	echo -e "${CYAN}${UNDERLINE}Running Update...${NONE}"
-	sudo apt-get update
-	echo
+VERSION="LEGACY"
+UPDATE_MODE=false
+PASS_THROUGH_ARGS=()
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --update)
+            UPDATE_MODE=true
+            shift
+            ;;
+        *)
+            PASS_THROUGH_ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+
+echo -e "Target version: ${BOLD}${VERSION}${NONE}"
+
+BACKUP_DIR="/tmp/gpionext-update-backup"
+SERVICE_FILE="/lib/systemd/system/gpionext.service"
+CONFIG_DB_PATH="${INSTALL_PATH}/config/config.db"
+
+# ---------------------------------------------------------------------------
+# Root check
+# ---------------------------------------------------------------------------
+
+if [ "$(whoami)" != "root" ]; then
+    echo "Switching to root user..."
+    sudo bash "$0" "$@"
+    exit $?
 fi
 
-# Use case sensitive matching
-shopt -u nocasematch
+# ---------------------------------------------------------------------------
+# Fetch and Extract
+# ---------------------------------------------------------------------------
 
-# Function to compare Debian versions
-bookworm_or_greater() {
-    # Check if version is greater than or equal to 12 (Bookworm)
-    if [ "$1" -ge 12 ]; then
-        return 0
-    else
-        return 1
+echo -e "${CYAN}Creating install directory ${INSTALL_PATH}...${NONE}"
+mkdir -p "$INSTALL_PATH"
+
+if $UPDATE_MODE; then
+    echo -e "${CYAN}Update mode enabled: preserving user settings...${NONE}"
+    rm -rf "$BACKUP_DIR"
+    mkdir -p "$BACKUP_DIR"
+    if [ -f "$CONFIG_DB_PATH" ]; then
+        cp "$CONFIG_DB_PATH" "${BACKUP_DIR}/config.db"
     fi
-}
+    if [ -f "$SERVICE_FILE" ]; then
+        cp "$SERVICE_FILE" "${BACKUP_DIR}/gpionext.service"
+    fi
+fi
 
-# Get Debian version
-DEBIAN_VERSION=$(cat /etc/debian_version | cut -d '.' -f 1)
-DEBIAN_NAME=$(grep -oP '(?<=VERSION_CODENAME=)[a-z]+' /etc/os-release)
+echo -e "${CYAN}Downloading source tarball for ${VERSION}...${NONE}"
+# fetch the master branch
+SOURCE_URL="https://github.com/${GITHUB_REPO}/archive/refs/tags/${VERSION}.tar.gz"
 
-
-# install dependencies
-echo -e "${CYAN}${UNDERLINE}Installing Dependencies...${NONE}"
-echo
-
-sudo apt-get -y install python3 python3-pip python3-dev gcc
-sudo apt-get -y install sqlite3 joystick python3-evdev
-
-echo "Debian version is: ${FUSCHIA}${UNDERLINE}$DEBIAN_VERSION - $DEBIAN_NAME${NONE}. Installing appropriate dependencies..."
-if bookworm_or_greater "$DEBIAN_VERSION"; then
-    sudo apt-get -y remove python3-rpi.gpio
-    sudo apt-get -y install python3-rpi-lgpio
+if curl -sfL "$SOURCE_URL" -o /tmp/gpionext.tar.gz; then
+    echo -e "${CYAN}Extracting to ${INSTALL_PATH}...${NONE}"
+    tar -xzf /tmp/gpionext.tar.gz -C "$INSTALL_PATH" --strip-components=1
+    rm /tmp/gpionext.tar.gz
 else
-    sudo apt-get -y install python3-rpi.gpio
+    echo -e "${RED}Error: Download failed for version ${VERSION}.${NONE}"
+    exit 1
 fi
 
-# add gpionext.service to systemd
-file1=$SCRIPTPATH"/gpionext.service"
-cp $file1 /lib/systemd/system/
-original='WorkingDirectory=/home/pi/gpionext'
-sed -i 's#'$original'#WorkingDirectory='$SCRIPTPATH'#g' /lib/systemd/system/gpionext.service
-systemctl enable gpionext
+# ---------------------------------------------------------------------------
+# Hand-off to setup.sh
+# ---------------------------------------------------------------------------
 
-# create Udev rule for SDL2 applications
-# old udev rule -> UDEV='SUBSYSTEM=="input", ATTRS{name}=="GPIOnext Keyboard", ENV{ID_INPUT_KEYBOARD}="1"'
-UDEV='KERNEL=="event*", ATTRS{idVendor}=="9999", ATTRS{idProduct}=="8888", MODE:="0644"'
-echo $UDEV > /etc/udev/rules.d/10-gpionext.rules
+if [ -f "${INSTALL_PATH}/setup.sh" ]; then
+    echo -e "${GREEN}Handing off to setup.sh...${NONE}"
+    bash "${INSTALL_PATH}/setup.sh" "${PASS_THROUGH_ARGS[@]}"
+else
+    echo -e "${RED}Error: setup.sh not found in extracted source.${NONE}"
+    exit 1
+fi
 
-# add uinput/evdev to modules if not already there
-if ! grep --quiet "uinput" /etc/modules; then echo "uinput" >> /etc/modules; fi
-if ! grep --quiet "evdev" /etc/modules; then echo "evdev" >> /etc/modules; fi
-
-# create bash custom commands
-cp $SCRIPTPATH"/usr-bin-gpionext" /usr/bin/gpionext
-config="CONFIG_PATH=${SCRIPTPATH}/config_manager.py"
-sed -i '1s#^#'$config'\n#g' /usr/bin/gpionext
-chmod 777 /usr/bin/gpionext
-
-# remove retrogame if present
-file1="/etc/rc.local"
-file2="/home/pi/.profile"
-if grep --quiet "retrogame" $file1 $file2; then
-  echo "-----------------"
-  echo -e "${CYAN}retrogame utility detected...${NONE}"
-  echo -e "${FUSCHIA}Disable retrogame on startup? [y/n] (this can be undone)${NONE}"
-  echo "-----------------"
-  read USER_INPUT
-  if [[ ! -z $(echo ${USER_INPUT} | grep -i y) ]]; then
-    if grep --quiet "retrogame" $file1; then
-      echo -e "${CYAN}disabling retrogame in ${file1}${NONE}"
-      sed -i "/retrogame/s/^#*/: #/" $file1
-      #how to uncomment: sed '/retrogame/s/^#//'
+if $UPDATE_MODE; then
+    echo -e "${CYAN}Restoring preserved settings...${NONE}"
+    if [ -f "${BACKUP_DIR}/config.db" ]; then
+        mkdir -p "${INSTALL_PATH}/config"
+        cp "${BACKUP_DIR}/config.db" "$CONFIG_DB_PATH"
     fi
-	if grep --quiet "retrogame" $file2; then
-      echo -e "${CYAN}disabling retrogame in ${file2}${NONE}"
-      sed -i "/retrogame/s/^#*/: #/" $file2
-      #how to uncomment: sed '/retrogame/s/^#//'
+    if [ -f "${BACKUP_DIR}/gpionext.service" ]; then
+        cp "${BACKUP_DIR}/gpionext.service" "$SERVICE_FILE"
+        systemctl daemon-reload
     fi
-  fi
+    rm -rf "$BACKUP_DIR"
+    echo -e "${GREEN}Update complete: user settings preserved.${NONE}"
 fi
-
-clear
-echo -e "${CYAN}Install Complete!${NONE}"
-read -p $'\e[35m\e[4mWould you like to run the configuration manager now?\e[0m [y/n]' USER_INPUT
-
-#if yes, run gpionext config
-if [[ ! -z $(echo ${USER_INPUT} | grep -i y) ]]; then
-  sudo python3 $SCRIPTPATH/config_manager.py
-  echo "-------------> Setup Complete!"
-fi
-#Start GPIOnext
-systemctl daemon-reload
-systemctl start gpionext
-
-

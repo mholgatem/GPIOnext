@@ -62,7 +62,7 @@ def createDevice( device ):
 	sqlCursor.executemany( query, device )
 	SQL.commit()
 	
-def getDatabasePath ( defaultPath = '/home/pi/gpionext/config/' ):
+def getDatabasePath ( defaultPath = '/opt/gpionext/config/' ):
 	global SQL, sqlCursor
 	path = os.path.realpath( defaultPath )
 	if not os.path.isdir( path ):

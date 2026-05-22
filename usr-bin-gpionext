@@ -1,172 +1,265 @@
+#!/bin/bash
+# /usr/bin/gpionext — GPIOnext CLI wrapper
+#
+# Installed to /usr/bin/gpionext by install.sh
+# All paths are relative to INSTALL_PATH=/opt/gpionext
+#
+# Usage:
+#   gpionext start | stop | reload | config | disable | journal | update
+#   gpionext test [1-4]
+#   gpionext set combo_delay <ms>
+#   gpionext set key_hold_delay <ms>
+#   gpionext set debounce <ms>
+#   gpionext set pins <list|default>
+#   gpionext set pulldown <true|false>
+#   gpionext set dev <true|false>
+#   gpionext set debug <true|false>
+
+INSTALL_PATH="/opt/gpionext"
+SERVICE_FILE="/lib/systemd/system/gpionext.service"
+CONFIG_SCRIPT="${INSTALL_PATH}/python/ui/config_manager.py"
+VENV_PYTHON="${INSTALL_PATH}/venv/bin/python3"
+
 NONE='\033[00m'
 CYAN='\033[36m'
+GREEN='\033[32m'
+RED='\033[31m'
+FUSCHIA='\033[35m'
 
-# set case insensitive
 shopt -s nocasematch
 
-set_flag(){
-	sudo systemctl stop gpionext
-	sudo cp /lib/systemd/system/gpionext.service /tmp/gpionext.tmp
-	sudo sed -i -e "$1" /tmp/gpionext.tmp
-	sudo cp /tmp/gpionext.tmp /lib/systemd/system/gpionext.service
-	# reload daemon and restart
-	echo "Setting Flag and Restarting GPIOnext..."
-	sudo systemctl daemon-reload
-	sudo systemctl start gpionext
+# ---------------------------------------------------------------------------
+# set_flag: patch a CLI flag in the service ExecStart line, then reload+restart
+#
+# Parameters:
+#   $1 — sed expression to apply to the service file copy
+# ---------------------------------------------------------------------------
+set_flag() {
+    local SED_EXPR="$1"
+    sudo systemctl stop gpionext 2>/dev/null || true
+    sudo cp "$SERVICE_FILE" /tmp/gpionext.tmp
+    sudo sed -i -e "$SED_EXPR" /tmp/gpionext.tmp
+    sudo cp /tmp/gpionext.tmp "$SERVICE_FILE"
+    sudo rm -f /tmp/gpionext.tmp
+    echo "Applying setting and restarting GPIOnext..."
+    sudo systemctl daemon-reload
+    sudo systemctl start gpionext
 }
+
+# ---------------------------------------------------------------------------
+# Main command dispatch
+# ---------------------------------------------------------------------------
 
 case "$1" in
 
-"STOP")
-sudo systemctl stop gpionext
-;;
+# ── Daemon lifecycle ────────────────────────────────────────────────────────
 
 "START")
-sudo systemctl enable gpionext
-sudo systemctl start gpionext
-;;
+    sudo systemctl enable gpionext
+    sudo systemctl start gpionext
+    echo -e "${GREEN}GPIOnext started.${NONE}"
+    ;;
 
-"CONFIG")
-#Run config with any supplied arguments
-sudo python3 $CONFIG_PATH "${@:2}"
-;;
-
-"DISABLE")
-sudo systemctl disable gpionext
-;;
+"STOP")
+    sudo systemctl stop gpionext
+    echo -e "${CYAN}GPIOnext stopped.${NONE}"
+    ;;
 
 "RELOAD")
-sudo systemctl stop gpionext
-sudo systemctl daemon-reload
-sudo systemctl start gpionext
-;;
+    # Send SIGHUP for hot-reload (re-reads config without full restart)
+    sudo systemctl kill -s HUP gpionext 2>/dev/null || {
+        sudo systemctl stop gpionext
+        sudo systemctl daemon-reload
+        sudo systemctl start gpionext
+    }
+    echo -e "${CYAN}GPIOnext reloaded.${NONE}"
+    ;;
+
+"DISABLE")
+    sudo systemctl stop gpionext
+    sudo systemctl disable gpionext
+    echo -e "${CYAN}GPIOnext disabled. Run 'gpionext start' to re-enable.${NONE}"
+    ;;
 
 "UPDATE")
-echo -e "${CYAN}Starting Update...${NONE}"
-sudo bash ~/GPIOnext/update.sh
-;;
+    echo -e "${CYAN}Starting update...${NONE}"
+    # Fetch the bootstrap installer and run it with update mode + forwarded args
+    curl -sfL https://raw.githubusercontent.com/mholgatem/GPIOnext/main/install.sh | sudo bash -s -- --update "$@"
+    ;;
+
+"REMOVE")
+    if [ -f "${INSTALL_PATH}/remove.sh" ]; then
+        sudo bash "${INSTALL_PATH}/remove.sh"
+    else
+        echo -e "${RED}Error: remove.sh not found at ${INSTALL_PATH}/remove.sh${NONE}"
+    fi
+    ;;
+
+# ── Configuration ──────────────────────────────────────────────────────────
+
+"CONFIG")
+    # Extract daemon flags from ExecStart line (everything after gpionext.py)
+    if [ -f "$SERVICE_FILE" ]; then
+        EXEC_ARGS=$(grep '^ExecStart=' "$SERVICE_FILE" | sed -E 's/.*gpionext\.py[[:space:]]*//')
+    else
+        EXEC_ARGS=""
+    fi
+    # Pass daemon flags first, followed by manual CLI arguments for overrides
+    sudo "$VENV_PYTHON" "$CONFIG_SCRIPT" $EXEC_ARGS "${@:2}"
+    ;;
+
+# ── Diagnostics ────────────────────────────────────────────────────────────
 
 "JOURNAL")
-if ! [[ $(grep "\-\-dev" /lib/systemd/system/gpionext.service) ]]; then
-	echo "use 'gpionext set dev true' before running this command to get more information"
-fi
-echo -e "${CYAN}Press Ctrl + C to exit${NONE}";
-sudo journalctl -u gpionext -f
-;;
+    if ! grep -q "\-\-dev" "$SERVICE_FILE" 2>/dev/null; then
+        echo -e "${CYAN}Tip: run 'gpionext set dev true' for more detailed output.${NONE}"
+    fi
+    echo -e "${CYAN}Press Ctrl+C to exit${NONE}"
+    sudo journalctl -u gpionext -f
+    ;;
 
 "TEST")
-hash jstest >/dev/null || { echo >&2 "Installing Joystick for test module"; sudo apt-get install joystick; }
-(for i in /sys/devices/virtual/input/input*; do 
-	if [[ $(cat "$i/name") == "GPIOnext Joypad $2" ]]; then
-		event="/dev/input/"$(find $i -maxdepth 1 -type d -name 'js*' -printf '%f' -quit);
-		echo -e "${CYAN}Press Ctrl + C to exit${NONE}";
-		jstest --normal "$event"; 
-	fi
-done) && echo "Could not find GPIOnext Joypad $2 in virtual devices"
-;;
+    # Test a virtual joypad device with jstest
+    JOY_NUM="${2:-1}"
+    hash jstest 2>/dev/null || sudo apt-get install -y joystick
+    FOUND=false
+    for i in /sys/devices/virtual/input/input*; do
+        if [ -f "$i/name" ] && [ "$(cat "$i/name")" = "GPIOnext Joypad $JOY_NUM" ]; then
+            EVENT="/dev/input/$(find "$i" -maxdepth 1 -type d -name 'js*' -printf '%f' -quit)"
+            echo -e "${CYAN}Testing Joypad $JOY_NUM — Press Ctrl+C to exit${NONE}"
+            jstest --normal "$EVENT"
+            FOUND=true
+            break
+        fi
+    done
+    $FOUND || echo -e "${RED}GPIOnext Joypad $JOY_NUM not found. Is the daemon running?${NONE}"
+    ;;
+
+# ── Settings ───────────────────────────────────────────────────────────────
 
 "SET")
-	wholeNumber='^[0-9]+$'
-	case "$2" in
-		"COMBO_DELAY")
-			if [[ $3 =~ $wholeNumber ]] ; then
-				set_flag 's/--combo_delay [0-9]*/--combo_delay '$3'/g'
-			else
-				echo -e "You must supply a ${CYAN}valid whole number${NONE} for $2"
-			fi
-			;;
-		"PINS")
-			case "$3" in
-				"DEFAULT")
-					echo "setting pins to default"
-					set_flag 's/[ ]*--pins [0-9/,]*//g'
-					;;
-				[0-9/,]*)
-					echo "setting pins $3"
-					set_flag 's/[ ]*--pins [0-9/,]*//g;s/^ExecStart=.*/& --pins '$3'/g'
-					;;
-				*)
-					echo -e "You must supply ${CYAN}comma separated pin numbers${NONE} [ex. set pins 3,5,7,11] or default";;
-			esac
-			;;
-		"DEBOUNCE")
-			if [[ $3 =~ $wholeNumber ]] ; then
-				set_flag 's/--debounce [0-9]*/--debounce '$3'/g'
-			else
-				echo -e "You must supply a ${CYAN}valid whole number${NONE} for $2"
-			fi
-			;;
-		"PULLDOWN")
-			case "$3" in
-				"TRUE")
-					if ! [[ $(grep "\-\-pulldown" /lib/systemd/system/gpionext.service) ]]; then
-						set_flag 's/^ExecStart=.*/& --pulldown/'
-					fi;;
-				"FALSE")
-					set_flag 's/[ ]*--pulldown//g'
-					;;
-				*)
-					echo -e "You must supply ${CYAN}TRUE${NONE} or ${CYAN}FALSE${NONE} for $2 option";;
-			esac
-			;;
-		"DEV")
-			case "$3" in
-				"TRUE")
-					if ! [[ $(grep "\-\-dev" /lib/systemd/system/gpionext.service) ]]; then
-						set_flag 's/^ExecStart=.*/& --dev/'
-					fi;;
-				"FALSE")
-					set_flag 's/[ ]*--dev//g'
-					;;
-				*)
-					echo -e "You must supply ${CYAN}TRUE${NONE} or ${CYAN}FALSE${NONE} for $2 option";;
-			esac
-			;;
-		"DEBUG")
-			case "$3" in
-				"TRUE")
-					if ! [[ $(grep "\-\-debug" /lib/systemd/system/gpionext.service) ]]; then
-						set_flag 's/^ExecStart=.*/& --debug/'
-					fi;;
-				"FALSE")
-					set_flag 's/[ ]*--debug//g'
-					;;
-				*)
-					echo -e "You must supply ${CYAN}TRUE${NONE} or ${CYAN}FALSE${NONE} for $2 option";;
-			esac
-			;;
-		*)
-			echo "Unrecognized Parameter: ${2}"
-			;;
-	esac
-	
-;;
+    WHOLE_NUMBER='^[0-9]+$'
+    case "$2" in
+
+    "COMBO_DELAY")
+        if [[ $3 =~ $WHOLE_NUMBER ]]; then
+            set_flag "s/--combo_delay [0-9]*/--combo_delay $3/g"
+        else
+            echo -e "Supply a ${CYAN}whole number${NONE} of milliseconds for combo_delay"
+        fi
+        ;;
+
+    "KEY_HOLD_DELAY")
+        if [[ $3 =~ $WHOLE_NUMBER ]]; then
+            # Insert --key_hold_delay if absent, else replace existing value
+            if grep -q "\-\-key_hold_delay" "$SERVICE_FILE"; then
+                set_flag "s/--key_hold_delay [0-9]*/--key_hold_delay $3/g"
+            else
+                set_flag "s/^ExecStart=.*/& --key_hold_delay $3/"
+            fi
+        else
+            echo -e "Supply a ${CYAN}whole number${NONE} of milliseconds for key_hold_delay"
+        fi
+        ;;
+
+    "DEBOUNCE")
+        if [[ $3 =~ $WHOLE_NUMBER ]]; then
+            set_flag "s/--debounce [0-9]*/--debounce $3/g"
+        else
+            echo -e "Supply a ${CYAN}whole number${NONE} of milliseconds for debounce"
+        fi
+        ;;
+
+    "PINS")
+        case "$3" in
+            "DEFAULT")
+                set_flag 's/[ ]*--pins [0-9,]*//g'
+                ;;
+            [0-9,]*)
+                set_flag 's/[ ]*--pins [0-9,]*//g;s/^ExecStart=.*/& --pins '"$3"'/'
+                ;;
+            *)
+                echo -e "Supply ${CYAN}comma-separated pin numbers${NONE} or 'default'"
+                ;;
+        esac
+        ;;
+
+    "PULLDOWN")
+        case "$3" in
+            "TRUE")
+                grep -q "\-\-pulldown" "$SERVICE_FILE" || set_flag 's/^ExecStart=.*/& --pulldown/'
+                ;;
+            "FALSE")
+                set_flag 's/[ ]*--pulldown//g'
+                ;;
+            *)
+                echo -e "Supply ${CYAN}true${NONE} or ${CYAN}false${NONE}"
+                ;;
+        esac
+        ;;
+
+    "DEV")
+        case "$3" in
+            "TRUE")
+                grep -q "\-\-dev" "$SERVICE_FILE" || set_flag 's/^ExecStart=.*/& --dev/'
+                ;;
+            "FALSE")
+                set_flag 's/[ ]*--dev//g'
+                ;;
+            *)
+                echo -e "Supply ${CYAN}true${NONE} or ${CYAN}false${NONE}"
+                ;;
+        esac
+        ;;
+
+    "DEBUG")
+        case "$3" in
+            "TRUE")
+                grep -q "\-\-debug" "$SERVICE_FILE" || set_flag 's/^ExecStart=.*/& --debug/'
+                ;;
+            "FALSE")
+                set_flag 's/[ ]*--debug//g'
+                ;;
+            *)
+                echo -e "Supply ${CYAN}true${NONE} or ${CYAN}false${NONE}"
+                ;;
+        esac
+        ;;
+
+    *)
+        echo -e "${RED}Unknown setting: $2${NONE}"
+        ;;
+    esac
+    ;;
+
+# ── Help / unknown ─────────────────────────────────────────────────────────
 
 *)
-if ! [[ "$1" == "HELP" ]]; then
-	echo "Unrecognized Parameter: $1"
-fi
-echo "You can control the GPIOnext daemon using the following commands: 
+    [[ "$1" != "HELP" && -n "$1" ]] && echo -e "${RED}Unknown command: $1${NONE}"
+    echo -e "
+${CYAN}${BOLD:-}GPIOnext Commands${NONE}
 
-- gpionext start				-> Enable + Start daemon						
-- gpionext stop					-> Stop daemon until reboot or gpionext start is called
-- gpionext reload				-> Reload daemon
-- gpionext config				-> Run gpionext config						
-- gpionext disable				-> Stop daemon/Disable auto-start on boot (type gpionext start to re-enable auto-start)						
-- gpionext journal				-> Display any system output 
-- gpionext test [1-4]				-> run jstest for gpionext virtual controller
--------------------------------------------------------------------------------------------------------------------------------
-- gpionext set combo_delay [milliseconds]	-> Delay in milliseconds to wait for additional buttons to be pressed for combos						
-- gpionext set debounce [milliseconds]		-> Delay in milliseconds to wait to avoid multiple accidental presses					
-- gpionext set pins [default | pin numbers]	-> default = all available pins or comma separated pin numbers (ex. 3,5,7,11,40)					
-- gpionext set pulldown [true | false]		-> set pins to use pulldown resistors instead of pull up (excludes pins 3 + 5)		
-- gpionext set dev [true | false]		-> output information to console while program in use (use 'gpionext journal' to view)
-- gpionext set debug [true | false]		-> output information to gpionext/logFile.txt
+  ${CYAN}gpionext start${NONE}               Enable and start the daemon
+  ${CYAN}gpionext stop${NONE}                Stop the daemon (until next start or boot)
+  ${CYAN}gpionext reload${NONE}              Hot-reload config (no full restart)
+  ${CYAN}gpionext config${NONE}              Run the interactive configuration tool
+  ${CYAN}gpionext disable${NONE}             Stop and disable auto-start on boot
+  ${CYAN}gpionext journal${NONE}             Stream daemon log output
+  ${CYAN}gpionext test [1-4]${NONE}          Test a virtual joypad with jstest
+  ${CYAN}gpionext update${NONE}              Pull latest source and binary
+  ${CYAN}gpionext remove${NONE}              Completely remove GPIOnext from the system
 
-						"
+${CYAN}Settings (all restart the daemon):${NONE}
 
-;;
+  ${CYAN}gpionext set combo_delay <ms>${NONE}       Combo button window (default: 50)
+  ${CYAN}gpionext set key_hold_delay <ms>${NONE}    Key repeat delay (default: 350)
+  ${CYAN}gpionext set debounce <ms>${NONE}          Button debounce time (default: 1)
+  ${CYAN}gpionext set pins <list|default>${NONE}    Pins to watch [BOARD #](e.g. 3,5,7,11 or default)
+  ${CYAN}gpionext set pulldown <true|false>${NONE}  Use pulldown resistors (default: false)
+  ${CYAN}gpionext set dev <true|false>${NONE}       Log to console / journald (default: false)
+  ${CYAN}gpionext set debug <true|false>${NONE}     Log to /opt/gpionext/logFile.txt (default: false)
+"
+    ;;
 esac
-# set case match back to default
-shopt -u nocasematch
 
+shopt -u nocasematch

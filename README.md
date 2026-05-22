@@ -42,7 +42,7 @@ gpionext config</pre>
 
   * *default:* gpionext set pulldown false
   
-**gpionext set debug [true|false]** - write output to /home/pi/gpionext/logFile.txt
+**gpionext set debug [true|false]** - write output to /opt/gpionext/logFile.txt
 
   * *default:* gpionext set debug false
   

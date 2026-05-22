@@ -1,0 +1,105 @@
+name: Build Rust Extension
+
+# Triggers:
+#   - Push of a version tag (v*) → builds + attaches binaries to the GitHub Release
+#   - Manual dispatch → useful for testing CI without tagging
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Raspberry Pi 2B / 3 / Zero 2 W  (32-bit ARMv7)
+          - target: armv7-unknown-linux-gnueabihf
+            arch: armv7l
+            # Phase 2: add libgpiod-dev:armhf to apt_packages
+            apt_packages: ""
+
+          # Raspberry Pi 3 / 4 / 5 running 64-bit OS
+          - target: aarch64-unknown-linux-gnu
+            arch: aarch64
+            # Phase 2: add libgpiod-dev:arm64 to apt_packages
+            apt_packages: ""
+
+          # x86_64 for development / testing on desktop Linux
+          - target: x86_64-unknown-linux-gnu
+            arch: x86_64
+            # Phase 2: add libgpiod-dev to apt_packages
+            apt_packages: ""
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # Install any C cross-compilation dependencies (populated in Phase 2)
+      - name: Install system dependencies
+        if: matrix.apt_packages != ''
+        run: |
+          sudo dpkg --add-architecture armhf
+          sudo dpkg --add-architecture arm64
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.apt_packages }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # maturin-action handles Python discovery, cross-linker setup, and .so naming
+      - name: Build with maturin
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          # --manifest-path points maturin at the crate inside ./core/
+          args: >
+            --release
+            --strip
+            --manifest-path core/Cargo.toml
+            --out dist
+            --zig
+            -i python3.11
+            --features i2c
+          # manylinux: off = build against the runner's glibc (fine for Pi OS)
+          manylinux: off
+          before-script-linux: ""
+
+      # maturin builds a wheel (.whl). We extract the .so and rename it for install.sh
+      - name: Extract and rename output binary
+        run: |
+          unzip dist/*.whl -d dist/tmp
+          find dist/tmp -name "*.so" -exec mv {} dist/gpionext_core-${{ matrix.arch }}.so \;
+          rm -rf dist/tmp dist/*.whl
+          echo "Built: $(ls dist/)"
+
+      # Upload .so as a build artifact
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gpionext_core-${{ matrix.arch }}
+          path: dist/gpionext_core-${{ matrix.arch }}.so
+
+      # Attach binary to the GitHub Release (only on tag push)
+      - name: Attach binary to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/gpionext_core-${{ matrix.arch }}.so
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
