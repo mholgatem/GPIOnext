@@ -3,34 +3,32 @@ from evdev import AbsInfo, ecodes as e
 import RPi.GPIO as GPIO
 
 #Pi Zero, 1, 2, OR 3 - (Versions A+/B+)
-AVAILABLE_PINS = (3,5,7,11,13,15,19,21,23,29,31,33,35,37,
-			8,10,12,16,18,22,24,26,32,36,38,40)
+AVAILABLE_PINS = (0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27)
 
 #Pi 1 (Versions A/B)
 if GPIO.RPI_INFO['P1_REVISION'] < 3:
-	AVAILABLE_PINS = (3,5,7,11,13,15,19,21,23,
-				8,10,12,16,18,22,24,26)
+	AVAILABLE_PINS = (2,3,4,7,8,9,10,11,14,15,17,18,22,23,24,25,27)
 
 AVAILABLE_PINS_STRING = ', '.join(map(str, AVAILABLE_PINS))
 
 JOYSTICK_AXIS = AbsInfo(
-										value = 0, 
-										min = -255, 
-										max = 255, 
-										fuzz = 0, 
-										flat = 15, 
+										value = 0,
+										min = -255,
+										max = 255,
+										fuzz = 0,
+										flat = 15,
 										resolution = 0
 									)
 
 DEVICE_LIST = [
-					'Joypad 1', 
-					'Joypad 2', 
-					'Joypad 3', 
-					'Joypad 4', 
-					'Keyboard', 
+					'Joypad 1',
+					'Joypad 2',
+					'Joypad 3',
+					'Joypad 4',
+					'Keyboard',
 					'Commands'
 					]
-					
+
 BUTTON_LIST =[
 	('Start Button', e.BTN_START),
 	('Select Button', e.BTN_SELECT),
@@ -136,7 +134,7 @@ ALL_JOYSTICK_BUTTONS = [
 	e.BTN_TRIGGER_HAPPY38,
 	e.BTN_TRIGGER_HAPPY39,
 	e.BTN_TRIGGER_HAPPY40]
-	
+
 KEY_LIST = [
 	('↑ UP', e.KEY_UP),
 	('↓ DOWN', e.KEY_DOWN),
