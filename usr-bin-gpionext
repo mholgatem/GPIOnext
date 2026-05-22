@@ -226,6 +226,24 @@ case "$1" in
         esac
         ;;
 
+    "USE_I2C")
+        case "$3" in
+            "TRUE")
+                grep -q "\-\-use_i2c" "$SERVICE_FILE" || set_flag 's/^ExecStart=.*/& --use_i2c/'
+                ;;
+            "FALSE")
+                if grep -q "\-\-use_i2c" "$SERVICE_FILE"; then
+                    echo -e "${RED}Warning: Disabling I2C will cause GPIOnext to claim pins 3 and 5 as standard GPIOs."
+                    echo -e "If you later re-enable I2C, you MUST reboot the Raspberry Pi to restore I2C functionality.${NONE}"
+                fi
+                set_flag 's/[ ]*--use_i2c//g'
+                ;;
+            *)
+                echo -e "Supply ${CYAN}true${NONE} or ${CYAN}false${NONE}"
+                ;;
+        esac
+        ;;
+
     *)
         echo -e "${RED}Unknown setting: $2${NONE}"
         ;;
@@ -254,8 +272,9 @@ ${CYAN}Settings (all restart the daemon):${NONE}
   ${CYAN}gpionext set combo_delay <ms>${NONE}       Combo button window (default: 50)
   ${CYAN}gpionext set key_hold_delay <ms>${NONE}    Key repeat delay (default: 350)
   ${CYAN}gpionext set debounce <ms>${NONE}          Button debounce time (default: 1)
-  ${CYAN}gpionext set pins <list|default>${NONE}    Pins to watch [BOARD #](e.g. 3,5,7,11 or default)
+  ${CYAN}gpionext set pins <list|default>${NONE}    Pins to watch (e.g. 3,5,7,11 or default)
   ${CYAN}gpionext set pulldown <true|false>${NONE}  Use pulldown resistors (default: false)
+  ${CYAN}gpionext set use_i2c <true|false>${NONE}   Enable I2C hardware (default: false)
   ${CYAN}gpionext set dev <true|false>${NONE}       Log to console / journald (default: false)
   ${CYAN}gpionext set debug <true|false>${NONE}     Log to /opt/gpionext/logFile.txt (default: false)
 "

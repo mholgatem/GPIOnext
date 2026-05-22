@@ -1,6 +1,6 @@
 #!/bin/bash
-# GPIOnext Legacy Bootstrap Installer
-# Downloads and extracts the Legacy version of GPIOnext and runs setup.sh
+# GPIOnext Bootstrap Installer
+# Downloads and extracts the requested version of GPIOnext and runs setup.sh
 
 set -euo pipefail
 
@@ -17,15 +17,23 @@ RED='\033[31m'
 BOLD='\033[1m'
 
 # ---------------------------------------------------------------------------
-# Version Formatting (Always LEGACY for this script)
+# Version Formatting
 # ---------------------------------------------------------------------------
 
-VERSION="LEGACY"
+VERSION=""
 UPDATE_MODE=false
 PASS_THROUGH_ARGS=()
-
 while [ "$#" -gt 0 ]; do
     case "$1" in
+        --version)
+            if [ -n "${2:-}" ] && [[ "${2:-}" != --* ]]; then
+                VERSION="$2"
+                shift 2
+            else
+                echo -e "${RED}Error: --version requires a value (example: --version v0.3.3).${NONE}"
+                exit 1
+            fi
+            ;;
         --update)
             UPDATE_MODE=true
             shift
@@ -36,6 +44,28 @@ while [ "$#" -gt 0 ]; do
             ;;
     esac
 done
+
+if [ -z "$VERSION" ]; then
+    echo -e "${CYAN}Determining latest release...${NONE}"
+    VERSION=$(curl -sf "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" \
+        | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/') || VERSION=""
+    
+    if [ -z "$VERSION" ]; then
+        echo -e "${RED}Error: Could not determine latest release.${NONE}"
+        exit 1
+    fi
+else
+    # Format version: lowercase and prepend 'v' if missing
+    # Exception: 'LEGACY' should always be uppercase
+    if [[ "${VERSION,,}" == "legacy" ]]; then
+        VERSION="LEGACY"
+    else
+        VERSION="${VERSION,,}"
+        if [[ ! "$VERSION" =~ ^v ]]; then
+            VERSION="v${VERSION}"
+        fi
+    fi
+fi
 
 echo -e "Target version: ${BOLD}${VERSION}${NONE}"
 
@@ -73,7 +103,6 @@ if $UPDATE_MODE; then
 fi
 
 echo -e "${CYAN}Downloading source tarball for ${VERSION}...${NONE}"
-# fetch the master branch
 SOURCE_URL="https://github.com/${GITHUB_REPO}/archive/refs/tags/${VERSION}.tar.gz"
 
 if curl -sfL "$SOURCE_URL" -o /tmp/gpionext.tar.gz; then

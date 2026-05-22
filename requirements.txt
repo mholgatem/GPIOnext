@@ -1,1 +1,3 @@
-# Empty as we use system packages via --system-site-packages
+evdev
+smbus2
+textual
