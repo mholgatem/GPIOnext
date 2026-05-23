@@ -20,19 +20,19 @@ The easiest way to install GPIOnext is to use our bootstrap installer. This will
 
 ### Latest Version (Recommended)
 ```bash
-curl -sfL https://raw.githubusercontent.com/mholgatem/GPIOnext/main/install.sh | sudo bash
+curl -sfL https://raw.githubusercontent.com/mholgatem/GPIOnext/master/install.sh | sudo bash
 ```
 
 ### Specific Version
 If you need to install a specific version:
 ```bash
-curl -sfL https://raw.githubusercontent.com/mholgatem/GPIOnext/main/install.sh | sudo bash -s -- --version v0.1.0
+curl -sfL https://raw.githubusercontent.com/mholgatem/GPIOnext/master/install.sh | sudo bash -s -- --version v0.1.0
 ```
 
 ### Legacy Version
 To install the original Python-only implementation:
 ```bash
-curl -sfL https://raw.githubusercontent.com/mholgatem/GPIOnext/main/install.sh | sudo bash -s -- --version LEGACY
+curl -sfL https://raw.githubusercontent.com/mholgatem/GPIOnext/master/install.sh | sudo bash -s -- --version LEGACY
 ```
 
 ---
