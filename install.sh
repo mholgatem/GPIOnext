@@ -91,22 +91,48 @@ echo -e "${CYAN}Creating install directory ${INSTALL_PATH}...${NONE}"
 mkdir -p "$INSTALL_PATH"
 
 if $UPDATE_MODE; then
-    echo -e "${CYAN}Update mode enabled: preserving user settings...${NONE}"
+    echo -e "${CYAN}Update mode enabled: preserving user configurations...${NONE}"
     rm -rf "$BACKUP_DIR"
     mkdir -p "$BACKUP_DIR"
+    
+    # 1. Back up the critical database file
     if [ -f "$CONFIG_DB_PATH" ]; then
         cp "$CONFIG_DB_PATH" "${BACKUP_DIR}/config.db"
     fi
+    
+    # 2. Extract and parse flags from the old service file before we delete it
+    OLD_FLAGS=""
     if [ -f "$SERVICE_FILE" ]; then
-        cp "$SERVICE_FILE" "${BACKUP_DIR}/gpionext.service"
+        echo "Extracting runtime flags from the legacy systemd configuration..."
+        # Extract the text after gpionext.py (handles both local and absolute paths)
+        OLD_EXEC_START=$(grep -E '^ExecStart=' "$SERVICE_FILE" | head -n 1)
+        
+        # Use regex to strip off the prefix and capture everything after gpionext.py
+        if [[ "$OLD_EXEC_START" =~ gpionext\.py[[:space:]]+(.*)$ ]]; then
+            OLD_FLAGS="${BASH_REMATCH[1]}"
+            echo "Found existing runtime flags: $OLD_FLAGS"
+        fi
+        
+        # Back up the raw service file just in case the user wants a fallback reference
+        cp "$SERVICE_FILE" "${BACKUP_DIR}/gpionext.service.old"
     fi
+
+    # 3. Purge the old installation tree to remove legacy structural clutter
+    echo -e "${CYAN}Purging old application directory file assets...${NONE}"
+    # Delete everything inside /opt/gpionext EXCEPT the backup directory itself
+    find "$INSTALL_PATH" -mindepth 1 -maxdepth 1 ! -name "$(basename "$BACKUP_DIR")" -exec rm -rf {} +
 fi
 
 echo -e "${CYAN}Downloading source tarball for ${VERSION}...${NONE}"
 SOURCE_URL="https://github.com/${GITHUB_REPO}/archive/refs/tags/${VERSION}.tar.gz"
 
 if curl -sfL "$SOURCE_URL" -o /tmp/gpionext.tar.gz; then
+
+    echo -e "${CYAN}Purging old files from ${INSTALL_PATH}...${NONE}"
+    find "$INSTALL_PATH" -mindepth 1 -maxdepth 1 ! -name "venv" ! -name "$(basename "$BACKUP_DIR")" -exec rm -rf {} +
+	
     echo -e "${CYAN}Extracting to ${INSTALL_PATH}...${NONE}"
+	mkdir -p "$INSTALL_PATH"
     tar -xzf /tmp/gpionext.tar.gz -C "$INSTALL_PATH" --strip-components=1
     rm /tmp/gpionext.tar.gz
 else
@@ -132,10 +158,41 @@ if $UPDATE_MODE; then
         mkdir -p "${INSTALL_PATH}/config"
         cp "${BACKUP_DIR}/config.db" "$CONFIG_DB_PATH"
     fi
-    if [ -f "${BACKUP_DIR}/gpionext.service" ]; then
-        cp "${BACKUP_DIR}/gpionext.service" "$SERVICE_FILE"
+    
+    echo -e "${CYAN}${UNDERLINE}Configuring systemd service...${NONE}"
+
+    # add flags from old service file to new service file
+    NEW_SERVICE_TEMPLATE="${INSTALL_PATH}/gpionext.service"
+
+    if [ -f "$NEW_SERVICE_TEMPLATE" ]; then
+        # If we found old runtime flags from the backup phase, splice them into the template
+        if [ -n "${OLD_FLAGS:-}" ]; then
+            echo "Replacing template default flags with your saved runtime configurations..."
+            
+            # Escape special tokens safely for sed execution blocks
+            SAFE_FLAGS=$(echo "$OLD_FLAGS" | sed 's/[&/\]/\\&/g')
+            
+            # This regex matches 'gpionext.py' and clears out everything remaining on that line,
+            # replacing it strictly with 'gpionext.py' plus your custom extracted configuration flags.
+            sed -i "s|gpionext\.py.*$|gpionext.py $SAFE_FLAGS|g" "$NEW_SERVICE_TEMPLATE"
+        fi
+
+        # Copy the customized file to the systemd runtime location
+        cp "$NEW_SERVICE_TEMPLATE" "$SERVICE_FILE"
+        
         systemctl daemon-reload
+        systemctl enable "$SERVICE_NAME"
+    else
+        echo -e "${RED}Error: New service template configuration file not found.${NONE}"
+        exit 1
     fi
+
+    # Restore your database after the file tree has been updated
+    if $UPDATE_MODE && [ -f "${BACKUP_DIR}/config.db" ]; then
+        echo "Restoring configuration database..."
+        cp "${BACKUP_DIR}/config.db" "$CONFIG_DB_PATH"
+    fi
+    
     rm -rf "$BACKUP_DIR"
     echo -e "${GREEN}Update complete: user settings preserved.${NONE}"
 fi
