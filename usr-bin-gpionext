@@ -17,7 +17,7 @@
 
 INSTALL_PATH="/opt/gpionext"
 SERVICE_FILE="/lib/systemd/system/gpionext.service"
-CONFIG_SCRIPT="${INSTALL_PATH}/python/ui/config_manager.py"
+CONFIG_SCRIPT="${INSTALL_PATH}/config_manager.py"
 VENV_PYTHON="${INSTALL_PATH}/venv/bin/python3"
 
 NONE='\033[00m'
@@ -84,7 +84,7 @@ case "$1" in
 "UPDATE")
     echo -e "${CYAN}Starting update...${NONE}"
     # Fetch the bootstrap installer and run it with update mode + forwarded args
-    curl -sfL https://raw.githubusercontent.com/mholgatem/GPIOnext/main/install.sh | sudo bash -s -- --update "$@"
+    curl -sfL https://raw.githubusercontent.com/mholgatem/GPIOnext/master/install.sh | sudo bash -s -- --update "$@"
     ;;
 
 "REMOVE")

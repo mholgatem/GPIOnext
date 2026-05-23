@@ -38,6 +38,8 @@ parser.add_argument('--dev',
 parser.add_argument('--debug',
 							dest='debug', default = False, action='store_true',
 							help='Print data for debugging purposes')
+
+parser.add_argument('--combo_delay', default = 50, type = int)
 								
 args = parser.parse_args()
 	
