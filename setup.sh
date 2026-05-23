@@ -134,11 +134,50 @@ echo -e "Debian version: ${FUSCHIA}$DEBIAN_VERSION${NONE} (Bookworm+: $IS_BOOKWO
 echo
 
 # ---------------------------------------------------------------------------
+# Legacy apt source compatibility (Buster/Bullseye)
+# ---------------------------------------------------------------------------
+
+ensure_legacy_apt_source() {
+    local buster_repo='deb http://legacy.raspbian.org/raspbian/ buster main contrib non-free rpi'
+    local buster_list='/etc/apt/sources.list.d/gpionext-buster-legacy.list'
+    local sources_blob=''
+
+    # Collect current apt source declarations for simple text checks.
+    if [ -f /etc/apt/sources.list ]; then
+        sources_blob+=$(cat /etc/apt/sources.list)
+    fi
+    if [ -d /etc/apt/sources.list.d ]; then
+        sources_blob+=$'\n'
+        sources_blob+=$(cat /etc/apt/sources.list.d/*.list 2>/dev/null || true)
+    fi
+
+    if [ "$DEBIAN_VERSION" -eq 10 ] 2>/dev/null; then
+        if ! grep -Eq 'legacy\.raspbian\.org/raspbian/\s+buster' <<< "$sources_blob"; then
+            echo -e "${RED}Detected Debian Buster and no legacy Raspbian source.${NONE}"
+            echo "Some old RetroPie images require the archived Buster repo to install packages."
+            read -r -p "Add legacy Buster source now? [y/N]: " ADD_BUSTER_REPO
+            if [[ "$ADD_BUSTER_REPO" =~ ^[Yy]$ ]]; then
+                printf '%s\n' "$buster_repo" > "$buster_list"
+                echo -e "${GREEN}Added legacy source:${NONE} $buster_repo"
+            else
+                echo -e "${RED}Skipping legacy source addition by user choice.${NONE}"
+            fi
+        fi
+    elif [ "$DEBIAN_VERSION" -eq 11 ] 2>/dev/null; then
+        if ! grep -Eq 'raspbian\.org/raspbian/\s+bullseye|raspbian\.raspberrypi\.org/raspbian/\s+bullseye' <<< "$sources_blob"; then
+            echo -e "${RED}Detected Debian Bullseye but no obvious Bullseye Raspbian source was found.${NONE}"
+            echo "If apt update fails, review /etc/apt/sources.list and /etc/apt/sources.list.d/*.list."
+        fi
+    fi
+}
+
+# ---------------------------------------------------------------------------
 # apt update
 # ---------------------------------------------------------------------------
 
 shopt -s nocasematch
-if [[ "${1:-}" != "-noupdate" ]]; then
+if [[ "${1:-}" != "--noaptupdate" ]]; then
+    ensure_legacy_apt_source
     echo -e "${CYAN}${UNDERLINE}Updating package lists...${NONE}"
     apt-get update -q
 fi
