@@ -5,7 +5,4 @@ sqlite3
 joystick
 libgpiod-dev
 libi2c-dev
-curl
 gcc
-python3-evdev
-python3-smbus2
