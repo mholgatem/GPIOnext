@@ -70,16 +70,9 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
+          working-directory: ./core
           # --manifest-path points maturin at the crate inside ./core/
-          args: >
-            --release
-            --strip
-            --manifest-path core/Cargo.toml
-            --out dist
-            --zig
-            --target ${{ matrix.zig_target }}
-            -i python3.7
-            --features i2c
+          args: --release --strip --manifest-path Cargo.toml --out ../dist --zig --target ${{ matrix.zig_target }} -i python3.7 --features i2c
           # manylinux: off = build against the runner's glibc (fine for Pi OS)
           manylinux: off
           before-script-linux: ""
