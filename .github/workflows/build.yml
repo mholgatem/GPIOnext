@@ -23,24 +23,21 @@ jobs:
         include:
           # Raspberry Pi 2B / 3 / Zero 2 W  (32-bit ARMv7) - Force GLIBC 2.28 for Buster compatibility
           - target: armv7-unknown-linux-gnueabihf
-            zig_target: armv7-unknown-linux-gnueabihf.2.28
             arch: armv7l
             # Phase 2: add libgpiod-dev:armhf to apt_packages
             apt_packages: ""
 
           # Raspberry Pi 3 / 4 / 5 running 64-bit OS
           - target: aarch64-unknown-linux-gnu
-            zig_target: aarch64-unknown-linux-gnu.2.28
             arch: aarch64
             # Phase 2: add libgpiod-dev:arm64 to apt_packages
             apt_packages: ""
 
           # x86_64 for development / testing on desktop Linux
-          - target: x86_64-unknown-linux-gnu
-            zig_target: x86_64-unknown-linux-gnu
-            arch: x86_64
+          #- target: x86_64-unknown-linux-gnu
+          #  arch: x86_64
             # Phase 2: add libgpiod-dev to apt_packages
-            apt_packages: ""
+          #  apt_packages: ""
 
     steps:
       - name: Checkout repository
@@ -72,9 +69,9 @@ jobs:
           target: ${{ matrix.target }}
           working-directory: ./core
           # --manifest-path points maturin at the crate inside ./core/
-          args: --release --strip --manifest-path Cargo.toml --out ../dist --zig -i python3.7 --features i2c
+          args: --release --strip --manifest-path Cargo.toml --out ../dist -i python3.7 --features i2c
           # manylinux: off = build against the runner's glibc (fine for Pi OS)
-          manylinux: off
+          manylinux: auto
           before-script-linux: ""
 
       # maturin builds a wheel (.whl). We extract the .so and rename it for install.sh

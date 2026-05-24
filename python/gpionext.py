@@ -30,16 +30,51 @@ import config.SQL as SQL
 from config.constants import AVAILABLE_PINS_STRING
 from config.hat_detect import detect_audio_hat, format_hat_warning
 
+
+def _import_error_message(exc: ImportError) -> str:
+    """Build a detailed import failure message for gpionext_core."""
+    expected_paths = (
+        '/opt/gpionext/gpionext_core.so',
+        '/opt/gpionext/gpionext_core-armv7l.so',
+        '/opt/gpionext/gpionext_core-aarch64.so',
+        '/opt/gpionext/gpionext_core-x86_64.so',
+    )
+    path_state_lines = [
+        f'  - {path}: {"present" if os.path.exists(path) else "missing"}'
+        for path in expected_paths
+    ]
+
+    header = 'ERROR: Failed to import gpionext_core.'
+    details = f'ImportError details: {exc}'
+
+    if os.path.exists('/opt/gpionext/gpionext_core.so'):
+        guidance = (
+            'The extension file exists but failed to load. This usually means binary/runtime '
+            'incompatibility (glibc version, architecture mismatch, or missing linked symbols).\n'
+            'If you see GLIBC_* errors, rebuild/release gpionext_core in an older baseline '
+            'environment for this target OS.'
+        )
+    else:
+        guidance = (
+            'Core binary appears missing. Install or update the architecture-specific binary:\n'
+            '  /opt/gpionext/setup.sh --update-core\n'
+            'or download a release asset and symlink it as /opt/gpionext/gpionext_core.so'
+        )
+
+    return '\n'.join([
+        header,
+        details,
+        'Checked core paths:',
+        *path_state_lines,
+        guidance,
+    ])
+
+
 try:
     import gpionext_core
-except ImportError:
-    sys.exit(
-        'ERROR: gpionext_core.so not found.\n'
-        'Run the install script or download the pre-built binary for this arch:\n'
-        '  curl -L https://github.com/mholgatem/GPIOnext/releases/latest/download/'
-        f'gpionext_core-$(uname -m).so -o /opt/gpionext/gpionext_core.so'
-    )
-
+except ImportError as exc:
+    sys.exit(_import_error_message(exc))
+    
 # ---------------------------------------------------------------------------
 # CLI arguments
 # ---------------------------------------------------------------------------
