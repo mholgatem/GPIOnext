@@ -17,6 +17,7 @@ callers (config_manager.py, gpionext.py) work without changes.
 import ast
 import os
 import sqlite3
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 # ---------------------------------------------------------------------------
 # Install path — updated from /home/pi/gpionext to /opt/gpionext
@@ -26,8 +27,8 @@ INSTALL_PATH = '/opt/gpionext'
 DEFAULT_DB_PATH = os.path.join(INSTALL_PATH, 'config', 'config.db')
 
 # Module-level connection (initialised by init())
-_conn: sqlite3.Connection | None = None
-_cursor: sqlite3.Cursor | None = None
+_conn = None  # type: Optional[sqlite3.Connection]
+_cursor = None  # type: Optional[sqlite3.Cursor]
 
 
 def _row_factory(cursor: sqlite3.Cursor, row: tuple) -> dict:
@@ -39,7 +40,7 @@ def _row_factory(cursor: sqlite3.Cursor, row: tuple) -> dict:
 # Pin value parsing / conversion helpers
 # ---------------------------------------------------------------------------
 
-def parse_pins_value(raw: str) -> list[int | str]:
+def parse_pins_value(raw: str) -> List[Union[int, str]]:
     """
     Safely parse a stored DB pins value into physical BOARD pins and/or
     virtual I2C pin strings.
@@ -79,7 +80,7 @@ def parse_pins_value(raw: str) -> list[int | str]:
     if not isinstance(parsed, (list, tuple)):
         return []
 
-    pins: list[int | str] = []
+    pins = []  # type: List[Union[int, str]]
     for item in parsed:
         pin = _normalise_pin_item(item)
         if pin is not None:
@@ -87,7 +88,7 @@ def parse_pins_value(raw: str) -> list[int | str]:
     return pins
 
 
-def pin_value_to_vpin(pin: int | str) -> int | None:
+def pin_value_to_vpin(pin: Union[int, str]) -> Optional[int]:
     """
     Convert a parsed physical or virtual pin value to the integer pin number
     expected by the core/runtime display layers.
@@ -119,7 +120,7 @@ def format_pins_value(raw: str) -> str:
     return '' if raw is None else str(raw)
 
 
-def _normalise_pin_item(item: object) -> int | str | None:
+def _normalise_pin_item(item: object) -> Optional[Union[int, str]]:
     """Return a supported pin item or None for unsupported values."""
     if isinstance(item, int):
         return item
@@ -154,7 +155,7 @@ def _is_i2c_pin_string(value: str) -> bool:
 # Initialisation
 # ---------------------------------------------------------------------------
 
-def init(db_path: str | None = None) -> None:
+def init(db_path: Optional[str] = None) -> None:
     """
     Open (or create) the SQLite database and ensure the GPIOnext table exists.
     Must be called once before any other function in this module.
@@ -231,7 +232,7 @@ def _resolve_db_path() -> str:
 # Read operations
 # ---------------------------------------------------------------------------
 
-def getDevices(device_names: list[str]) -> list[list[dict]]:
+def getDevices(device_names: List[str]) -> List[List[Dict[str, Any]]]:
     """
     Load raw DB rows for each device name. Returns one list per device,
     preserving order. Empty inner lists mean that device has no mappings.
@@ -252,7 +253,7 @@ def getDevices(device_names: list[str]) -> list[list[dict]]:
     return result
 
 
-def getDevice(device_name: str) -> list[dict]:
+def getDevice(device_name: str) -> List[Dict[str, Any]]:
     """
     Load all DB rows for a single device.
 
@@ -268,7 +269,7 @@ def getDevice(device_name: str) -> list[dict]:
     ).fetchall()
 
 
-def getDeviceRaw(device_name: str) -> list[dict]:
+def getDeviceRaw(device_name: str) -> List[Dict[str, Any]]:
     """
     Alias for getDevice; kept for backward compatibility with config_manager.py.
 
@@ -281,7 +282,7 @@ def getDeviceRaw(device_name: str) -> list[dict]:
     return getDevice(device_name)
 
 
-def getAllRows() -> list[dict]:
+def getAllRows() -> List[Dict[str, Any]]:
     """
     Return every row in the database. Used by import/export and the live pin view.
 
@@ -314,7 +315,7 @@ def updateEntry(entry: dict) -> None:
     _conn.commit()
 
 
-def createDevice(rows: list[tuple]) -> None:
+def createDevice(rows: List[Tuple]) -> None:
     """
     Bulk-insert multiple rows for a new device.
 
@@ -373,7 +374,7 @@ def exportToJson() -> dict:
     }
 
 
-def importFromJson(data: dict | list, replace: bool = True) -> None:
+def importFromJson(data: Union[Dict, List], replace: bool = True) -> None:
     """
     Import configuration from a JSON export. 
     Supports both the new dict format and the legacy list format.

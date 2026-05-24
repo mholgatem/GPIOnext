@@ -23,7 +23,7 @@ Preset format:
 Only the devices/buttons listed in a preset are populated; everything else
 is left as-is in the database.
 """
-from typing import Any
+from typing import Any, Dict, List, Optional, Tuple
 
 try:
     from evdev import ecodes as e
@@ -43,7 +43,7 @@ except ImportError:
 # Preset definitions
 # ---------------------------------------------------------------------------
 
-PRESETS: dict[str, dict[str, Any]] = {
+PRESETS = {  # type: Dict[str, Dict[str, Any]]
 
     # -----------------------------------------------------------------------
     # Adafruit Retrogame Bonnet
@@ -138,7 +138,7 @@ PRESETS: dict[str, dict[str, Any]] = {
 # Accessor helpers
 # ---------------------------------------------------------------------------
 
-def get_preset_names() -> list[str]:
+def get_preset_names() -> List[str]:
     """
     Return a list of preset keys suitable for display in the config UI.
 
@@ -161,7 +161,7 @@ def get_display_name(preset_key: str) -> str:
     return PRESETS.get(preset_key, {}).get('_display_name', preset_key)
 
 
-def get_preset(preset_key: str) -> dict | None:
+def get_preset(preset_key: str) -> Optional[Dict]:
     """
     Return a preset dict by key, or None if not found.
 
@@ -174,7 +174,7 @@ def get_preset(preset_key: str) -> dict | None:
     return PRESETS.get(preset_key)
 
 
-def preset_to_db_rows(preset_key: str) -> list[tuple]:
+def preset_to_db_rows(preset_key: str) -> List[Tuple]:
     """
     Convert a preset into (device, name, type, command, pins) tuples
     ready for SQL.createDevice().
@@ -189,7 +189,7 @@ def preset_to_db_rows(preset_key: str) -> list[tuple]:
     if not preset:
         return []
 
-    rows: list[tuple] = []
+    rows = []  # type: List[Tuple]
 
     device_map = {'joypad1': 'Joypad 1', 'joypad2': 'Joypad 2',
                   'joypad3': 'Joypad 3', 'joypad4': 'Joypad 4',

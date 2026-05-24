@@ -7,7 +7,7 @@ name = "gpionext_core"
 # Version is inherited from Cargo.toml via maturin
 dynamic = ["version"]
 # Minimum Python that ships with Pi OS Bullseye (Pi 2B target)
-requires-python = ">=3.9"
+requires-python = ">=3.7"
 classifiers = [
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",

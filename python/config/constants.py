@@ -4,6 +4,8 @@ constants.py — Pin lists, evdev mappings, and device definitions.
 No RPi.GPIO import: Pi model detection uses /proc/cpuinfo so this module
 works without any GPIO library installed (safe to import on desktop too).
 """
+from typing import Dict, List, Optional, Tuple
+
 import os
 
 # ---------------------------------------------------------------------------
@@ -108,10 +110,10 @@ def pcf8574_pin_id(address: int, pin: int) -> str:
 
 
 def available_i2c_pins(
-    mcp23017_addresses: list[int] | None = None,
-    ads1115_addresses: list[int] | None = None,
-    pcf8574_addresses: list[int] | None = None,
-) -> list[str]:
+    mcp23017_addresses: Optional[List[int]] = None,
+    ads1115_addresses: Optional[List[int]] = None,
+    pcf8574_addresses: Optional[List[int]] = None,
+) -> List[str]:
     """
     Return a list of all i2c pin IDs for connected chips.
     Used to populate the config UI pin list alongside physical GPIO pins.
@@ -124,7 +126,7 @@ def available_i2c_pins(
     Returns:
         list[str]: sorted list of pin ID strings
     """
-    pins: list[str] = []
+    pins = []  # type: List[str]
     for addr in (mcp23017_addresses or []):
         for port in ('A', 'B'):
             for bit in range(8):
@@ -151,7 +153,7 @@ COMMAND_PRESETS = [
 # device_index in Rust corresponds to position in this list
 # ---------------------------------------------------------------------------
 
-DEVICE_LIST: list[str] = [
+DEVICE_LIST = [  # type: List[str]
     'Joypad 1',   # device_index 0
     'Joypad 2',   # device_index 1
     'Joypad 3',   # device_index 2
@@ -160,7 +162,7 @@ DEVICE_LIST: list[str] = [
     'Commands',   # device_index 5
 ]
 
-DEVICE_INDEX: dict[str, int] = {name: i for i, name in enumerate(DEVICE_LIST)}
+DEVICE_INDEX = {name: i for i, name in enumerate(DEVICE_LIST)}  # type: Dict[str, int]
 
 # ---------------------------------------------------------------------------
 # Joystick axis definition (EV_ABS AbsInfo)
@@ -180,7 +182,7 @@ except ImportError:
 
 try:
     from evdev import ecodes as e
-    BUTTON_LIST: list[tuple[str, int]] = [
+    BUTTON_LIST = [  # type: List[Tuple[str, int]]
         ('Start Button',           e.BTN_START),
         ('Select Button',          e.BTN_SELECT),
         ('Button A',               e.BTN_A),
@@ -218,7 +220,7 @@ try:
         ('Button Generic 23',      e.BTN_TRIGGER_HAPPY24),
     ]
 
-    KEY_LIST: list[tuple[str, int]] = [
+    KEY_LIST = [  # type: List[Tuple[str, int]]
         ('↑ UP',               e.KEY_UP),
         ('↓ DOWN',             e.KEY_DOWN),
         ('← LEFT',             e.KEY_LEFT),

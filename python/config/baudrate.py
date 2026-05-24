@@ -10,6 +10,7 @@ root privileges. It is intended for advanced users only.
 import os
 import re
 import sys
+from typing import Optional
 
 CONFIG_PATHS = [
     '/boot/firmware/config.txt',
@@ -100,7 +101,7 @@ def set_baudrate(rate: int) -> bool:
             print("Hint: Run this utility with sudo.")
         return False
 
-def _resolve_config_path() -> str | None:
+def _resolve_config_path() -> Optional[str]:
     """Find the first existing config path."""
     for path in CONFIG_PATHS:
         if os.path.exists(path):

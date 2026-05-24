@@ -12,6 +12,7 @@ Thin Python wrapper around the gpionext_core Rust extension:
 Run as: /opt/gpionext/venv/bin/python3 -u gpionext.py [flags]
 """
 import argparse
+from typing import Optional
 import os
 import signal
 import sys
@@ -92,7 +93,7 @@ class GPIOnext:
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = self._normalise_args(args)
         self._log_file = None
-        self._core: gpionext_core.GpioCore | None = None
+        self._core: Optional[gpionext_core.GpioCore] = None
 
         self._open_log()
 

@@ -93,7 +93,7 @@ class LivePinView(Static):
         height: 1fr;
         background: $background;
         color: $text;
-        border: solid $border;
+        border: solid #2C363F;
         padding: 1 2;
         overflow-y: auto;
     }

@@ -20,6 +20,7 @@ Usage (from gpionext.py):
         args.pins = [p for p in args.pins if p not in hat['reserved_pins']]
 """
 import os
+from typing import Dict, Optional, Tuple
 
 # ---------------------------------------------------------------------------
 # Known audio HAT overlay names → reserved BOARD pin numbers
@@ -27,7 +28,7 @@ import os
 # Sources: each HAT's datasheet and Raspberry Pi DT overlay source.
 # ---------------------------------------------------------------------------
 
-_HAT_PIN_TABLE: dict[str, tuple[int, ...]] = {
+_HAT_PIN_TABLE = {  # type: Dict[str, Tuple[int, ...]]
     # HiFiBerry DAC / DAC+ / DAC+ Pro
     # I2S: BCK=12, FS=35, DIN=38, DOUT=40; MCLK on Pro: 7
     'hifiberry-dac':        (12, 35, 38, 40),
@@ -67,7 +68,7 @@ _HAT_PIN_TABLE: dict[str, tuple[int, ...]] = {
 }
 
 # Display names for known overlays (for user-facing messages)
-_HAT_DISPLAY_NAMES: dict[str, str] = {
+_HAT_DISPLAY_NAMES = {  # type: Dict[str, str]
     'hifiberry-dac':        'HiFiBerry DAC',
     'hifiberry-dacplus':    'HiFiBerry DAC+',
     'hifiberry-dacplusadc': 'HiFiBerry DAC+ADC',
@@ -94,7 +95,7 @@ _HAT_DISPLAY_NAMES: dict[str, str] = {
 # Detection
 # ---------------------------------------------------------------------------
 
-def detect_audio_hat() -> dict | None:
+def detect_audio_hat() -> Optional[Dict]:
     """
     Detect a connected audio HAT and return its name and reserved BOARD pins.
 
@@ -124,7 +125,7 @@ def detect_audio_hat() -> dict | None:
     return None
 
 
-def _detect_via_eeprom() -> dict | None:
+def _detect_via_eeprom() -> Optional[Dict]:
     """
     Read the HAT product name from the device-tree HAT EEPROM node.
     This is written by the HAT at boot time for officially-certified HATs.
@@ -149,7 +150,7 @@ def _detect_via_eeprom() -> dict | None:
     return None
 
 
-def _detect_via_config(config_path: str) -> dict | None:
+def _detect_via_config(config_path: str) -> Optional[Dict]:
     """
     Scan a Pi boot config file for dtoverlay= lines matching known audio HATs.
 
