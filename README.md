@@ -1,5 +1,14 @@
 # GPIOnext+
 
+
+---
+### Pardon Our Dust!
+While the base code works, I am currently testing the installer/updater and various system configurations (Pi3/4/5, Buster/Bullseye/Bookworm, 32bit/64bit). This takes a bit of time, but I'm working hard to get through all of the testing as quickly as possible. In the meantime, the legacy code is still available. If you have problems with the installer, you should be able to clone the Legacy-Code branch to /opt/gpionext, then run the setup.sh script.
+
+Thank you for your patience!
+
+---
+
 This is a fully featured GPIO to HID controller Daemon that is fully compatible with RetroPie (and PiPlay, RIP). It includes an intuitive config utility and an easy to use CLI wrapper in order to quickly make changes on the fly. In this long overdue revamp, we have migrated to a core handler written in Rust. This lower level language gets us closer to the metal reducing the lag induced by the Python interpreter.
 
 <h4>What's New?</h4>
