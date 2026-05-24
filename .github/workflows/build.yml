@@ -15,7 +15,7 @@ permissions:
 jobs:
   build:
     name: Build (${{ matrix.arch }})
-    runs-on: ubuntu-20.04 #in order to target python 3.7, we need this virtual machine
+    runs-on: ubuntu-latest
 
     strategy:
       fail-fast: false
@@ -60,8 +60,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ${{ matrix.apt_packages }}
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Install Python 3.7 via Deadsnakes PPA
+        uses: deadsnakes/action@v3.1.0
         with:
           python-version: '3.7'
 
