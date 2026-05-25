@@ -48,7 +48,6 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      # Install any C cross-compilation dependencies (populated in Phase 2)
       - name: Install system dependencies
         if: matrix.apt_packages != ''
         run: |
@@ -57,24 +56,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ${{ matrix.apt_packages }}
 
-      - name: Install Python 3.7 via Deadsnakes PPA
-        uses: deadsnakes/action@v3.1.0
-        with:
-          python-version: '3.7'
+      # No Python install step needed — abi3-py37 in Cargo.toml handles
+      # ABI compatibility; maturin uses whatever Python is on the runner.
 
-      # maturin-action handles Python discovery, cross-linker setup, and .so naming
       - name: Build with maturin
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
           working-directory: ./core
-          # --manifest-path points maturin at the crate inside ./core/
-          args: --release --strip --manifest-path Cargo.toml --out ../dist -i python3.7 --features i2c
-          # manylinux: off = build against the runner's glibc (fine for Pi OS)
-          manylinux: auto
+          args: --release --strip --manifest-path Cargo.toml --out ../dist --features i2c
+          manylinux: 2014    # glibc 2.17 floor — covers Pi OS Buster through Bookworm
           before-script-linux: ""
 
-      # maturin builds a wheel (.whl). We extract the .so and rename it for install.sh
       - name: Extract and rename output binary
         run: |
           unzip dist/*.whl -d dist/tmp
@@ -82,14 +75,12 @@ jobs:
           rm -rf dist/tmp dist/*.whl
           echo "Built: $(ls dist/)"
 
-      # Upload .so as a build artifact
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: gpionext_core-${{ matrix.arch }}
           path: dist/gpionext_core-${{ matrix.arch }}.so
 
-      # Attach binary to the GitHub Release (only on tag push)
       - name: Attach binary to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
