@@ -70,6 +70,7 @@ jobs:
 
       - name: Extract and rename output binary
         run: |
+          sudo chown -R "$USER" dist/
           unzip dist/*.whl -d dist/tmp
           find dist/tmp -name "*.so" -exec mv {} dist/gpionext_core-${{ matrix.arch }}.so \;
           rm -rf dist/tmp dist/*.whl
