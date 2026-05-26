@@ -21,7 +21,7 @@ from textual.widgets import (
     DataTable, Input, Checkbox, Select, Switch, SelectionList
 )
 from textual.widgets.selection_list import Selection
-from textual.screen import ModalScreen
+from textual.screen import ModalScreen, Screen
 from textual import on, work
 from textual.reactive import reactive
 
@@ -486,6 +486,65 @@ class InputModal(SafeDismissMixin, ModalScreen[Optional[str]]):
 
 
 # ---------------------------------------------------------------------------
+# Splash Screen
+# ---------------------------------------------------------------------------
+
+class SplashScreen(Screen):
+    """Full-screen splash displayed at startup; auto-dismisses after 2.5 s or on keypress."""
+
+    DEFAULT_CSS = """
+    SplashScreen {
+        align: center middle;
+        background: #151B23;
+    }
+    #splash-content {
+        width: auto;
+        height: auto;
+        content-align: center middle;
+        text-align: left;
+        padding: 2 4;
+        border: double #00D2D3;
+    }
+    """
+
+    _ART = (
+        "[#00D2D3 bold]"
+        "[#00D2D3 bold] ██████╗ ██████╗ ██╗  ██████╗     [/]\n"
+        "[#13BFD7 bold]██╔════╝ ██╔══██╗██║ ██╔═══██╗    [/]\n"
+        "[#26ACDB bold]██║ ███╗ ██████╔╝██║ ██║   ██║    [/]\n"
+        "[#3999DF bold]██║  ██║ ██╔═══╝ ██║ ██║   ██║    [/]\n"
+        "[#4C86E3 bold]╚██████║ ██║     ██║ ╚██████╔╝    [/]\n"
+        "[#5F73E7 bold] ╚═════╝ ╚═╝     ╚═╝  ╚═════╝     [/]\n"
+        "[#00D2D3 bold]                                  [/]\n"
+        "[#715FEB bold]███╗  ██╗███████╗██╗  ██╗████████╗[/]\n" 
+        "[#844CEF bold]████╗ ██║██╔════╝╚██╗██╔╝╚══██╔══╝[/]\n" 
+        "[#9739F3 bold]██╔██╗██║█████╗   ╚███╔╝    ██║   [/]\n"
+        "[#AA26F7 bold]██║╚████║██╔══╝   ██╔██╗    ██║   [/]\n"
+        "[#BD13FB bold]██║ ╚███║███████╗██╔╝ ██╗   ██║   [/]\n"
+        "[#D000ff bold]╚═╝  ╚══╝╚══════╝╚═╝  ╚═╝   ╚═╝   [/]\n"
+        "\n\n"
+        "[dim]GPIO Peripheral Manager for Raspberry Pi[/]\n\n"
+        "[dim italic]Press any key to continue...[/]"
+    )
+
+    def compose(self) -> ComposeResult:
+        yield Static(self._ART, id="splash-content")
+
+    def on_mount(self) -> None:
+        self._dismissed = False
+        self.set_timer(5, self._do_dismiss)
+
+    def on_key(self, event) -> None:
+        self._do_dismiss()
+
+    def _do_dismiss(self) -> None:
+        if self._dismissed:
+            return
+        self._dismissed = True
+        self.app.pop_screen()
+
+
+# ---------------------------------------------------------------------------
 # Main Application
 # ---------------------------------------------------------------------------
 
@@ -564,13 +623,17 @@ class ConfigurationApp(App):
     }
 
     Tabs {
-        background: $surface;
+        background: $background;
     }
 
     Tab.-active {
         background: $background;
         color: $warning;
         text-style: bold;
+    }
+
+    Tab:hover {
+        text-style: reverse;
     }
 
     TabbedContent #--content {
@@ -814,6 +877,7 @@ class ConfigurationApp(App):
         return args
 
     def on_mount(self) -> None:
+        self.push_screen(SplashScreen())
         self.refresh_mappings_table()
         self.refresh_i2c_table()
         self._stop_daemon()

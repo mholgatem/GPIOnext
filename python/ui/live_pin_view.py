@@ -177,7 +177,7 @@ class LivePinView(Static):
     def render(self) -> RenderResult:
         """Render the pin monitor table."""
         lines = []
-        lines.append("[bold cyan]GPIONEXT — LIVE PIN MONITOR[/]")
+        lines.append("[bold cyan]GPIONEXT — LIVE PIN MONITOR (50ms refresh)[/]")
         lines.append("[dim]○ = OFF     [cyan]●[/] = ON[/]\n")
         lines.append(f"[bold]  {'PIN':<6} {'BOARD':<10} {'STATE':<7} {'MAPPED TO'}[/]")
 
