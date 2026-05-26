@@ -48,7 +48,21 @@ except ImportError:
 # Modal Screens
 # ---------------------------------------------------------------------------
 
-class PinCaptureModal(ModalScreen[Optional[List[int]]]):
+class SafeDismissMixin:
+    """Mixin that prevents double-dismiss (ScreenStackError on Textual 0.43.2)."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._dismissed = False
+
+    def _safe_dismiss(self, result) -> None:
+        if self._dismissed:
+            return
+        self._dismissed = True
+        self.dismiss(result)
+
+
+class PinCaptureModal(SafeDismissMixin, ModalScreen[Optional[List[int]]]):
     """Modal screen for capturing GPIO pin input."""
 
     DEFAULT_CSS = """
@@ -87,7 +101,7 @@ class PinCaptureModal(ModalScreen[Optional[List[int]]]):
 
     def on_mount(self) -> None:
         if not _HAS_CORE:
-            self.dismiss(None)
+            self._safe_dismiss(None)
             return
         self.set_interval(0.05, self.poll_pins)
 
@@ -117,15 +131,15 @@ class PinCaptureModal(ModalScreen[Optional[List[int]]]):
 
         if self.hold_start and (time.time() - self.hold_start) >= self.hold_seconds:
             pins = [bit for bit in range(256) if bitmask & (1 << bit)]
-            self.dismiss(pins)
+            self._safe_dismiss(pins)
 
     @on(Button.Pressed, "#cancel")
     def cancel_capture(self) -> None:
-        self.dismiss(None)
+        self._safe_dismiss(None)
 
     def on_key(self, event) -> None:
         if event.key == "escape":
-            self.dismiss(None)
+            self._safe_dismiss(None)
 
 
 class ConfirmModal(ModalScreen[bool]):
@@ -171,7 +185,7 @@ class ConfirmModal(ModalScreen[bool]):
             self.dismiss(False)
 
 
-class MultiSelectionModal(ModalScreen[Optional[List[Any]]]):
+class MultiSelectionModal(SafeDismissMixin, ModalScreen[Optional[List[Any]]]):
     """Modal screen for selecting multiple items from a list."""
 
     DEFAULT_CSS = """
@@ -207,14 +221,14 @@ class MultiSelectionModal(ModalScreen[Optional[List[Any]]]):
 
     @on(Button.Pressed, "#cancel")
     def handle_cancel(self) -> None:
-        self.dismiss(None)
+        self._safe_dismiss(None)
 
     def on_key(self, event) -> None:
         if event.key == "escape":
-            self.dismiss(None)
+            self._safe_dismiss(None)
 
 
-class SingleSelectionModal(ModalScreen[Optional[Any]]):
+class SingleSelectionModal(SafeDismissMixin, ModalScreen[Optional[Any]]):
     """Modal screen for selecting a single item from a list."""
 
     DEFAULT_CSS = """
@@ -247,14 +261,14 @@ class SingleSelectionModal(ModalScreen[Optional[Any]]):
 
     @on(Button.Pressed, "#cancel")
     def handle_cancel(self) -> None:
-        self.dismiss(None)
+        self._safe_dismiss(None)
 
     def on_key(self, event) -> None:
         if event.key == "escape":
-            self.dismiss(None)
+            self._safe_dismiss(None)
 
 
-class CommandInputModal(ModalScreen[Optional[Tuple[str, int]]]):
+class CommandInputModal(SafeDismissMixin, ModalScreen[Optional[Tuple[str, int]]]):
     """Modal screen for configuring a command with an optional timeout."""
 
     DEFAULT_CSS = """
@@ -300,11 +314,11 @@ class CommandInputModal(ModalScreen[Optional[Tuple[str, int]]]):
 
     @on(Button.Pressed, "#cancel")
     def handle_cancel(self) -> None:
-        self.dismiss(None)
+        self._safe_dismiss(None)
 
     def on_key(self, event) -> None:
         if event.key == "escape":
-            self.dismiss(None)
+            self._safe_dismiss(None)
 
 
 class NextCommandModal(ModalScreen[Optional[str]]):
@@ -345,7 +359,7 @@ class NextCommandModal(ModalScreen[Optional[str]]):
             self.dismiss(None)
 
 
-class AddI2cModal(ModalScreen[Optional[Tuple[str, int, int, Optional[int]]]]):
+class AddI2cModal(SafeDismissMixin, ModalScreen[Optional[Tuple[str, int, int, Optional[int]]]]):
     """Modal for adding an I2C chip."""
 
     DEFAULT_CSS = """
@@ -402,14 +416,14 @@ class AddI2cModal(ModalScreen[Optional[Tuple[str, int, int, Optional[int]]]]):
 
     @on(Button.Pressed, "#cancel")
     def handle_cancel(self) -> None:
-        self.dismiss(None)
+        self._safe_dismiss(None)
 
     def on_key(self, event) -> None:
         if event.key == "escape":
-            self.dismiss(None)
+            self._safe_dismiss(None)
 
 
-class InputModal(ModalScreen[Optional[str]]):
+class InputModal(SafeDismissMixin, ModalScreen[Optional[str]]):
     """Modal screen for getting text input."""
 
     DEFAULT_CSS = """
@@ -444,11 +458,11 @@ class InputModal(ModalScreen[Optional[str]]):
 
     @on(Button.Pressed, "#cancel")
     def handle_cancel(self) -> None:
-        self.dismiss(None)
+        self._safe_dismiss(None)
 
     def on_key(self, event) -> None:
         if event.key == "escape":
-            self.dismiss(None)
+            self._safe_dismiss(None)
 
 
 # ---------------------------------------------------------------------------
@@ -932,7 +946,7 @@ class ConfigurationApp(App):
     @on(Button.Pressed, "#btn-add-i2c")
     @work
     async def handle_add_i2c(self) -> None:
-        result = await self.push_screen_wait(AddI2cModal())
+        result = await self.push_screen(AddI2cModal(), wait_for_dismiss=True)
         if result:
             chip_type, bus, address, int_pin = result
             table_name = f"I2C_{chip_type}"
@@ -980,7 +994,7 @@ class ConfigurationApp(App):
         
         if not db_table: return
         
-        confirm = await self.push_screen_wait(ConfirmModal("Remove Chip", f"Remove this {prefix.upper()} chip?"))
+        confirm = await self.push_screen(ConfirmModal("Remove Chip", f"Remove this {prefix.upper()} chip?"), wait_for_dismiss=True)
         if confirm:
             try:
                 SQL._cursor.execute(f"DELETE FROM {db_table} WHERE id = ?", (int(db_id),))
@@ -1012,10 +1026,10 @@ class ConfigurationApp(App):
             device_name = row_data[1]
             mapping_name = row_data[2]
             
-            confirm = await self.push_screen_wait(ConfirmModal(
+            confirm = await self.push_screen(ConfirmModal(
                 "Delete Mapping", 
                 f"Are you sure you want to delete '{mapping_name}' from {device_name}?"
-            ))
+            ), wait_for_dismiss=True)
             if confirm:
                 SQL.deleteEntry({'id': row_id})
                 self.notify(f"Mapping '{mapping_name}' deleted.")
@@ -1037,16 +1051,16 @@ class ConfigurationApp(App):
             
         options = [(dev, dev) for dev in configured_devices]
         
-        device_to_clear = await self.push_screen_wait(SingleSelectionModal(
+        device_to_clear = await self.push_screen(SingleSelectionModal(
             "Select Device to Clear",
             options
-        ))
+        ), wait_for_dismiss=True)
         
         if device_to_clear:
-            confirm = await self.push_screen_wait(ConfirmModal(
+            confirm = await self.push_screen(ConfirmModal(
                 "Clear Device", 
                 f"Are you sure you want to delete ALL mappings for {device_to_clear}?"
-            ))
+            ), wait_for_dismiss=True)
             
             if confirm:
                 SQL.deleteDevice(device_to_clear)
@@ -1081,7 +1095,7 @@ class ConfigurationApp(App):
 
         while True:
             # 1. Ask for command and timeout
-            result = await self.push_screen_wait(CommandInputModal(COMMAND_PRESETS))
+            result = await self.push_screen(CommandInputModal(COMMAND_PRESETS), wait_for_dismiss=True)
             if result is None:
                 self.notify("Configuration cancelled", severity="warning")
                 return
@@ -1096,7 +1110,7 @@ class ConfigurationApp(App):
 
             # 3. Ask for pins (only if we aren't appending to the same button)
             if current_pins_str is None:
-                pins = await self.push_screen_wait(PinCaptureModal(f"Command {cmd_count}"))
+                pins = await self.push_screen(PinCaptureModal(f"Command {cmd_count}"), wait_for_dismiss=True)
                 if pins is None:
                     self.notify("Configuration cancelled", severity="warning")
                     return
@@ -1109,7 +1123,7 @@ class ConfigurationApp(App):
                 last_entry[3] = f"{last_entry[3]} ||| {final_cmd}"
 
             # 4. Ask what to do next
-            next_step = await self.push_screen_wait(NextCommandModal())
+            next_step = await self.push_screen(NextCommandModal(), wait_for_dismiss=True)
             
             if next_step == "SAME_BUTTON":
                 # Do not clear current_pins_str, do not increment cmd_count
@@ -1137,19 +1151,19 @@ class ConfigurationApp(App):
         # Overwrite Check
         existing = [r for r in SQL.getAllRows() if r['device'] == device_name]
         if existing:
-            confirm = await self.push_screen_wait(ConfirmModal(
+            confirm = await self.push_screen(ConfirmModal(
                 "Overwrite Device", 
                 f"{device_name} is already configured. This will overwrite your current configuration. Continue?"
-            ))
+            ), wait_for_dismiss=True)
             if not confirm:
                 return
 
         # 1. Select keys to configure
-        selected_keys = await self.push_screen_wait(MultiSelectionModal(
+        selected_keys = await self.push_screen(MultiSelectionModal(
             "Select Keys to Configure",
             KEY_LIST,
             defaults={key[1] for key in KEY_LIST[:4]} # Default to first 4 (arrows usually)
-        ))
+        ), wait_for_dismiss=True)
         if selected_keys is None: return
 
         self.notify("Starting Keyboard wizard")
@@ -1158,7 +1172,7 @@ class ConfigurationApp(App):
         # 2. Iterate through selected keys
         for key_code in selected_keys:
             key_name = next(name for name, code in KEY_LIST if code == key_code)
-            pins = await self.push_screen_wait(PinCaptureModal(f"Keyboard: {key_name}"))
+            pins = await self.push_screen(PinCaptureModal(f"Keyboard: {key_name}"), wait_for_dismiss=True)
             if pins is None:
                 self.notify("Configuration cancelled", severity="warning")
                 return
@@ -1175,27 +1189,27 @@ class ConfigurationApp(App):
         # Overwrite Check
         existing = [r for r in SQL.getAllRows() if r['device'] == device_name]
         if existing:
-            confirm = await self.push_screen_wait(ConfirmModal(
+            confirm = await self.push_screen(ConfirmModal(
                 "Overwrite Device", 
                 f"{device_name} is already configured. This will overwrite your current configuration. Continue?"
-            ))
+            ), wait_for_dismiss=True)
             if not confirm:
                 return
 
         # 1. Ask for axis (DPad) count
-        axis_count = await self.push_screen_wait(SingleSelectionModal(
+        axis_count = await self.push_screen(SingleSelectionModal(
             "Configure Joypad", 
             [("No DPad/Joysticks", 0), ("1 DPad/Joystick", 1), ("2 DPad/Joysticks", 2), ("3 DPad/Joysticks", 3), ("4 DPad/Joysticks", 4)],
             value=1
-        ))
+        ), wait_for_dismiss=True)
         if axis_count is None: return
 
         # 2. Select buttons to configure
-        selected_buttons = await self.push_screen_wait(MultiSelectionModal(
+        selected_buttons = await self.push_screen(MultiSelectionModal(
             "Select Buttons to Configure",
             BUTTON_LIST,
             defaults={btn[1] for btn in BUTTON_LIST[:8]} # Default to first 8 common buttons
-        ))
+        ), wait_for_dismiss=True)
         if selected_buttons is None: return
 
         self.notify(f"Starting wizard for {device_name}")
@@ -1210,7 +1224,7 @@ class ConfigurationApp(App):
                 ('RIGHT', (0,  255)),
             ):
                 label = f'DPAD {i} {direction}'
-                pins = await self.push_screen_wait(PinCaptureModal(f"{device_name}: {label}"))
+                pins = await self.push_screen(PinCaptureModal(f"{device_name}: {label}"), wait_for_dismiss=True)
                 if pins is None:
                     self.notify("Configuration cancelled", severity="warning")
                     return
@@ -1219,7 +1233,7 @@ class ConfigurationApp(App):
         # Buttons
         for btn_code in selected_buttons:
             btn_name = next(name for name, code in BUTTON_LIST if code == btn_code)
-            pins = await self.push_screen_wait(PinCaptureModal(f"{device_name}: {btn_name}"))
+            pins = await self.push_screen(PinCaptureModal(f"{device_name}: {btn_name}"), wait_for_dismiss=True)
             if pins is None:
                 self.notify("Configuration cancelled", severity="warning")
                 return
@@ -1239,10 +1253,10 @@ class ConfigurationApp(App):
             return
             
         display_name = get_display_name(preset_key)
-        confirm = await self.push_screen_wait(ConfirmModal(
+        confirm = await self.push_screen(ConfirmModal(
             "Load HAT Preset", 
             f"Apply '{display_name}'? This will overwrite existing mappings for affected devices."
-        ))
+        ), wait_for_dismiss=True)
         
         if confirm:
             rows = preset_to_db_rows(preset_key)
@@ -1266,11 +1280,11 @@ class ConfigurationApp(App):
     async def handle_export(self) -> None:
         """Export the current configuration to a JSON file."""
         default_path = os.path.join(self._get_user_home(), "gpionext_config.json")
-        filepath = await self.push_screen_wait(InputModal(
+        filepath = await self.push_screen(InputModal(
             "Export Configuration",
             placeholder="Path to save JSON...",
             default_value=default_path
-        ))
+        ), wait_for_dismiss=True)
         if not filepath:
             return
             
@@ -1287,11 +1301,11 @@ class ConfigurationApp(App):
     async def handle_import(self) -> None:
         """Import configuration from a JSON file."""
         default_path = os.path.join(self._get_user_home(), "gpionext_config.json")
-        filepath = await self.push_screen_wait(InputModal(
+        filepath = await self.push_screen(InputModal(
             "Import Configuration",
             placeholder="Path to JSON file...",
             default_value=default_path
-        ))
+        ), wait_for_dismiss=True)
         if not filepath:
             return
             
@@ -1299,10 +1313,10 @@ class ConfigurationApp(App):
             self.notify(f"File not found: {filepath}", severity="error")
             return
             
-        confirm = await self.push_screen_wait(ConfirmModal(
+        confirm = await self.push_screen(ConfirmModal(
             "Import Configuration", 
             "This will overwrite all current device mappings. Are you sure?"
-        ))
+        ), wait_for_dismiss=True)
         
         if confirm:
             try:
@@ -1409,8 +1423,3 @@ if __name__ == '__main__':
     
     app = ConfigurationApp(args)
     app.run()
-
-
-()
-
-
