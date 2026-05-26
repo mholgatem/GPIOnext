@@ -7,6 +7,7 @@ Migrated to Textual for a modern async TUI.
 import argparse
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -43,6 +44,25 @@ try:
     _HAS_CORE = True
 except ImportError:
     _HAS_CORE = False
+
+_SERVICE_FILE = "/lib/systemd/system/gpionext.service"
+
+
+def _pins_to_str(pins) -> str:
+    """
+    Convert a pins value (list of ints or comma-separated string) to a
+    display string suitable for the Daemon Settings Input widget.
+
+    Parameters:
+        pins: list of int pin numbers, or a comma-separated string.
+
+    Returns:
+        Comma-separated string of sorted pin numbers, or the original string.
+    """
+    if isinstance(pins, str):
+        return pins
+    return ','.join(str(p) for p in sorted(pins))
+
 
 # ---------------------------------------------------------------------------
 # Modal Screens
@@ -525,6 +545,19 @@ class ConfigurationApp(App):
         overflow-y: auto;
         overflow-x: auto;
     }
+    #settings-grid {
+        grid-size: 2;
+        grid-columns: 1fr 1fr;
+        grid-rows: auto;
+        margin: 1 0;
+    }
+    .settings-label {
+        padding: 1 0;
+        content-align: left middle;
+    }
+    .settings-input {
+        width: 100%;
+    }
 
     TabbedContent {
         height: 100%;
@@ -640,7 +673,18 @@ class ConfigurationApp(App):
         color: $success;
         border: round $success;
     }
-    
+
+    #btn-save-settings {
+        color: $success;
+        border: round $success;
+    }
+
+    #btn-pins-default {
+        color: $warning;
+        border: round $warning;
+        background: $background;
+    }
+
     #btn-export {
         color: $warning;
         border: round $warning;
@@ -829,11 +873,55 @@ class ConfigurationApp(App):
                             yield Label("[bold]HAT Presets:[/]")
                             yield Select([(get_display_name(p), p) for p in get_preset_names()], id="select-preset")
                             yield Button("\\[ + Apply Preset ]", id="btn-apply-preset", classes="btn-global")
-                            
+
                             yield Label("\n[bold]Configuration Management:[/]")
                             with Horizontal(classes="footer-buttons"):
                                 yield Button("\\[ Export JSON → ]", id="btn-export", classes="btn-global")
                                 yield Button("\\[ → Import JSON ]", id="btn-import", classes="btn-global")
+
+                            yield Label("\n[bold]Daemon Settings:[/]")
+                            with Grid(id="settings-grid"):
+                                yield Label("combo_delay (ms):", classes="settings-label")
+                                _w = Input(str(getattr(self.args, 'combo_delay', 50)),
+                                           id="input-combo-delay", classes="settings-input",
+                                           placeholder="50")
+                                _w.tooltip = "Window (ms) for multi-button combos before input is processed (default: 50)"
+                                yield _w
+                                yield Label("key_hold_delay (ms):", classes="settings-label")
+                                _w = Input(str(getattr(self.args, 'key_hold_delay', 350)),
+                                           id="input-key-hold-delay", classes="settings-input",
+                                           placeholder="350")
+                                _w.tooltip = "Milliseconds before a held keyboard key begins repeating (default: 350)"
+                                yield _w
+                                yield Label("debounce (ms):", classes="settings-label")
+                                _w = Input(str(getattr(self.args, 'debounce', 1)),
+                                           id="input-debounce", classes="settings-input",
+                                           placeholder="1")
+                                _w.tooltip = "Ignore repeated GPIO signals within this window after a state change (default: 1)"
+                                yield _w
+                                yield Label("pins:", classes="settings-label")
+                                _w = Input(_pins_to_str(self.args.pins),
+                                           id="input-pins", classes="settings-input",
+                                           placeholder="default")
+                                _w.tooltip = "Comma-separated BOARD pin numbers to monitor. Leave blank or 'default' to use all available pins."
+                                yield _w
+                                yield Label("pulldown:", classes="settings-label")
+                                _w = Switch(getattr(self.args, 'pulldown', False), id="switch-pulldown")
+                                _w.tooltip = "Enable internal pull-down resistors on GPIO input pins"
+                                yield _w
+                                yield Label("dev mode:", classes="settings-label")
+                                _w = Switch(getattr(self.args, 'dev', False), id="switch-dev")
+                                _w.tooltip = "Log daemon output to journald — enables verbose output for 'gpionext journal'"
+                                yield _w
+                                yield Label("debug mode:", classes="settings-label")
+                                _w = Switch(getattr(self.args, 'debug', False), id="switch-debug")
+                                _w.tooltip = "Write detailed debug output to /opt/gpionext/logFile.txt"
+                                yield _w
+                            with Horizontal(classes="footer-buttons"):
+                                yield Button("\\[ + Save Settings ]", id="btn-save-settings",
+                                             classes="btn-global")
+                                yield Button("\\[ Set pins to default ]", id="btn-pins-default",
+                                             classes="btn-global")
                 
                 with Vertical(id="right-panel"):
                     db_rows = SQL.getAllRows()
@@ -920,11 +1008,10 @@ class ConfigurationApp(App):
         
         # Update systemd service file
         try:
-            service_file = "/lib/systemd/system/gpionext.service"
-            if os.path.exists(service_file):
-                with open(service_file, 'r') as f:
+            if os.path.exists(_SERVICE_FILE):
+                with open(_SERVICE_FILE, 'r') as f:
                     lines = f.readlines()
-                with open(service_file, 'w') as f:
+                with open(_SERVICE_FILE, 'w') as f:
                     for line in lines:
                         if line.startswith('ExecStart='):
                             line = line.replace(' --use_i2c', '')
@@ -1348,6 +1435,123 @@ class ConfigurationApp(App):
             except Exception as e:
                 self.notify(f"Import error: {e}", severity="error")
 
+    def _patch_service_flags(self, combo_delay: int, key_hold_delay: int,
+                              debounce: int, pins_str: str,
+                              pulldown: bool, dev: bool, debug: bool) -> None:
+        """
+        Patch the ExecStart line in the systemd service file with new flag values,
+        then daemon-reload and restart the gpionext service.
+
+        Parameters:
+            combo_delay:     --combo_delay value in ms
+            key_hold_delay:  --key_hold_delay value in ms
+            debounce:        --debounce value in ms
+            pins_str:        --pins value as a string; 'default' or '' omits the flag
+            pulldown:        whether to include --pulldown flag
+            dev:             whether to include --dev flag
+            debug:           whether to include --debug flag
+        """
+        if not os.path.exists(_SERVICE_FILE):
+            self.notify("Service file not found — running outside Pi?", severity="warning")
+            return
+
+        with open(_SERVICE_FILE, 'r') as f:
+            content = f.read()
+
+        def _strip_managed_flags(line: str) -> str:
+            # Remove flags managed by this panel from the ExecStart line
+            for flag in ('--combo_delay', '--key_hold_delay', '--debounce',
+                         '--pulldown', '--dev', '--debug'):
+                line = re.sub(r'\s+' + re.escape(flag) + r'(\s+\S+)?', '', line)
+            line = re.sub(r'\s+--pins\s+\S+', '', line)
+            return line.rstrip()
+
+        new_lines = []
+        for line in content.splitlines(keepends=True):
+            if line.startswith('ExecStart='):
+                line = _strip_managed_flags(line)
+                line += f' --combo_delay {combo_delay}'
+                line += f' --key_hold_delay {key_hold_delay}'
+                line += f' --debounce {debounce}'
+                if pins_str and pins_str.lower() != 'default':
+                    line += f' --pins {pins_str.replace(" ", "")}'
+                if pulldown:
+                    line += ' --pulldown'
+                if dev:
+                    line += ' --dev'
+                if debug:
+                    line += ' --debug'
+                line += '\n'
+            new_lines.append(line)
+
+        with open(_SERVICE_FILE, 'w') as f:
+            f.writelines(new_lines)
+
+        # daemon-reload registers the updated unit file; the daemon itself is
+        # stopped while the config tool runs and will start with the new flags
+        # when the config tool exits (see action_quit).
+        subprocess.call(['systemctl', 'daemon-reload'])
+
+    @on(Button.Pressed, "#btn-pins-default")
+    def handle_pins_default(self) -> None:
+        """Reset the pins Input to the full default BOARD pin list."""
+        self.query_one("#input-pins", Input).value = AVAILABLE_PINS_STRING
+
+    @on(Button.Pressed, "#btn-save-settings")
+    @work
+    async def handle_save_settings(self) -> None:
+        """
+        Read the Daemon Settings widgets, validate inputs, patch the service file,
+        restart the daemon, and refresh the live pin monitor if the pins list changed.
+        """
+        combo_delay_str = self.query_one("#input-combo-delay", Input).value.strip()
+        key_hold_str    = self.query_one("#input-key-hold-delay", Input).value.strip()
+        debounce_str    = self.query_one("#input-debounce", Input).value.strip()
+        pins_str        = self.query_one("#input-pins", Input).value.strip()
+        pulldown        = self.query_one("#switch-pulldown", Switch).value
+        dev             = self.query_one("#switch-dev", Switch).value
+        debug           = self.query_one("#switch-debug", Switch).value
+
+        try:
+            combo_delay    = int(combo_delay_str) if combo_delay_str else 50
+            key_hold_delay = int(key_hold_str)    if key_hold_str    else 350
+            debounce       = int(debounce_str)    if debounce_str    else 1
+        except ValueError:
+            self.notify("combo_delay, key_hold_delay, and debounce must be whole numbers.",
+                        severity="error")
+            return
+
+        old_pins_str = _pins_to_str(self.args.pins)
+        pins_changed = pins_str != old_pins_str
+
+        # Update in-memory args to keep the rest of the UI consistent
+        self.args.combo_delay    = combo_delay
+        self.args.key_hold_delay = key_hold_delay
+        self.args.debounce       = debounce
+        self.args.pulldown       = pulldown
+        self.args.dev            = dev
+        self.args.debug          = debug
+        if pins_str and pins_str.lower() != 'default':
+            self.args.pins = [int(x.strip()) for x in pins_str.split(',') if x.strip()]
+        else:
+            from config.constants import AVAILABLE_PINS
+            self.args.pins = list(AVAILABLE_PINS)
+
+        try:
+            self._patch_service_flags(combo_delay, key_hold_delay, debounce,
+                                       pins_str, pulldown, dev, debug)
+            self.notify("Settings saved. New settings take effect when you exit the config tool.")
+        except Exception as e:
+            self.notify(f"Failed to save settings: {e}", severity="error")
+            return
+
+        if pins_changed:
+            pins_to_show = self._get_pins_to_show()
+            monitor = self.query_one("#live-monitor", LivePinView)
+            monitor.pins = sorted(pins_to_show)
+            monitor.update_labels(SQL.getAllRows())
+            self.notify("Pin list updated — live monitor refreshed.", timeout=5)
+
     def _pins_to_str(self, pins: List[int]) -> str:
         out = []
         for p in pins:
@@ -1425,6 +1629,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='GPIOnext Configuration Manager')
     parser.add_argument('--pins', default=AVAILABLE_PINS_STRING)
     parser.add_argument('--use_i2c', action='store_true')
+    parser.add_argument('--combo_delay', type=int, default=50)
+    parser.add_argument('--key_hold_delay', type=int, default=350)
+    parser.add_argument('--debounce', type=int, default=1)
+    parser.add_argument('--pulldown', action='store_true')
+    parser.add_argument('--dev', action='store_true')
+    parser.add_argument('--debug', action='store_true')
     args, unknown = parser.parse_known_args()
     
     app = ConfigurationApp(args)
