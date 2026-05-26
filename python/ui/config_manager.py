@@ -14,7 +14,7 @@ import time
 from typing import List, Dict, Optional, Any, Tuple, Set
 
 from textual.app import App, ComposeResult
-from textual.containers import Container, Horizontal, Vertical, Grid
+from textual.containers import Container, Horizontal, Vertical, Grid, ScrollableContainer
 from textual.widgets import (
     Header, Footer, Static, Button, Label, TabbedContent, TabPane, 
     DataTable, Input, Checkbox, Select, Switch, SelectionList
@@ -520,6 +520,11 @@ class ConfigurationApp(App):
         width: 40%;
         height: 1fr;
     }
+    #pin-scroll {
+        height: 1fr;
+        overflow-y: auto;
+        overflow-x: auto;
+    }
 
     TabbedContent {
         height: 100%;
@@ -833,7 +838,8 @@ class ConfigurationApp(App):
                 with Vertical(id="right-panel"):
                     db_rows = SQL.getAllRows()
                     pins_to_show = self._get_pins_to_show()
-                    yield LivePinView(pins_to_show, db_rows, id="live-monitor")
+                    with ScrollableContainer(id="pin-scroll"):
+                        yield LivePinView(pins_to_show, db_rows, id="live-monitor")
 
             with Horizontal(id="custom-footer"):
                 yield Label("Q", classes="footer-key")
