@@ -1146,7 +1146,7 @@ class ConfigurationApp(App):
         monitor = self.query_one("#live-monitor", LivePinView)
         monitor.pins = sorted(pins_to_show)
         monitor.update_labels(SQL.getAllRows())
-        self.notify(f"I2C Hardware {'enabled' if event.value else 'disabled'}.")
+        self.notify(f"I2C Hardware {'enabled (may require restart of gpionext config)' if event.value else 'disabled'}.")
 
     @on(Button.Pressed, "#btn-add-i2c")
     @work
