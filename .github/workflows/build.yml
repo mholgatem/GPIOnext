@@ -56,6 +56,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ${{ matrix.apt_packages }}
 
+      - name: Set version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            echo "VERSION=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          else
+            echo "VERSION=dev-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          fi
+
       # No Python install step needed — abi3-py37 in Cargo.toml handles
       # ABI compatibility; maturin uses whatever Python is on the runner.
 
@@ -76,6 +85,9 @@ jobs:
           rm -rf dist/tmp dist/*.whl
           echo "Built: $(ls dist/)"
 
+      - name: Write VERSION file
+        run: echo "${{ steps.version.outputs.VERSION }}" > dist/VERSION
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -86,6 +98,8 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/gpionext_core-${{ matrix.arch }}.so
+          files: |
+            dist/gpionext_core-${{ matrix.arch }}.so
+            dist/VERSION
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
