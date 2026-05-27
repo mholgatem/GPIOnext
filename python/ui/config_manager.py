@@ -611,11 +611,17 @@ class ConfigurationApp(App):
         overflow-y: auto;
         overflow-x: auto;
     }
+    #preset-scroll {
+        height: 1fr;
+        overflow-y: auto;
+        overflow-x: auto;
+    }
     #settings-grid {
         grid-size: 2;
         grid-columns: 1fr 1fr;
         grid-rows: auto;
         margin: 1 0;
+        height: auto;
     }
     .settings-label {
         padding: 1 0;
@@ -666,6 +672,8 @@ class ConfigurationApp(App):
     #tab-presets {
         background: $background;
         color: $accent;
+        overflow-y: auto;
+        overflow-x: hidden;
     }
     
     .btn-global {
@@ -708,6 +716,16 @@ class ConfigurationApp(App):
         align: left middle;
     }
 
+    .header-buttons {
+        height: 5;
+        align: center middle;
+    }
+
+    .header-buttons Button {
+        margin: 0 1;
+        border: round $border;
+    }
+    
     .footer-buttons {
         height: 5;
         margin-top: 1;
@@ -941,58 +959,58 @@ class ConfigurationApp(App):
                                     yield Button("\\[ - Remove Selected Chip ]", id="btn-remove-i2c", classes="btn-global")
                         
                         with TabPane("\\[ Presets & Config ]", id="tab-presets"):
-                            yield Label("[bold]HAT Presets:[/]")
-                            yield Select([(get_display_name(p), p) for p in get_preset_names()], id="select-preset")
-                            yield Button("\\[ + Apply Preset ]", id="btn-apply-preset", classes="btn-global")
+                            with ScrollableContainer(id="preset-scroll"):
+                                with Horizontal(classes="header-buttons"):
+                                    yield Button("\\[ Export JSON → ]", id="btn-export", classes="btn-global")
+                                    yield Button("\\[ → Import JSON ]", id="btn-import", classes="btn-global")
+                                    
+                                yield Label("[bold]HAT Presets:[/]")
+                                yield Select([(get_display_name(p), p) for p in get_preset_names()], id="select-preset")
+                                yield Button("\\[ + Apply Preset ]", id="btn-apply-preset", classes="btn-global")
 
-                            yield Label("\n[bold]Configuration Management:[/]")
-                            with Horizontal(classes="footer-buttons"):
-                                yield Button("\\[ Export JSON → ]", id="btn-export", classes="btn-global")
-                                yield Button("\\[ → Import JSON ]", id="btn-import", classes="btn-global")
-
-                            yield Label("\n[bold]Daemon Settings:[/]")
-                            with Grid(id="settings-grid"):
-                                yield Label("combo_delay (ms):", classes="settings-label")
-                                _w = Input(str(getattr(self.args, 'combo_delay', 50)),
-                                           id="input-combo-delay", classes="settings-input",
-                                           placeholder="50")
-                                _w.tooltip = "Window (ms) for multi-button combos before input is processed (default: 50)"
-                                yield _w
-                                yield Label("key_hold_delay (ms):", classes="settings-label")
-                                _w = Input(str(getattr(self.args, 'key_hold_delay', 350)),
-                                           id="input-key-hold-delay", classes="settings-input",
-                                           placeholder="350")
-                                _w.tooltip = "Milliseconds before a held keyboard key begins repeating (default: 350)"
-                                yield _w
-                                yield Label("debounce (ms):", classes="settings-label")
-                                _w = Input(str(getattr(self.args, 'debounce', 1)),
-                                           id="input-debounce", classes="settings-input",
-                                           placeholder="1")
-                                _w.tooltip = "Ignore repeated GPIO signals within this window after a state change (default: 1)"
-                                yield _w
-                                yield Label("pins:", classes="settings-label")
-                                _w = Input(_pins_to_str(self.args.pins),
-                                           id="input-pins", classes="settings-input",
-                                           placeholder="default")
-                                _w.tooltip = "Comma-separated BOARD pin numbers to monitor. Leave blank or 'default' to use all available pins."
-                                yield _w
-                                yield Label("pulldown:", classes="settings-label")
-                                _w = Switch(getattr(self.args, 'pulldown', False), id="switch-pulldown")
-                                _w.tooltip = "Enable internal pull-down resistors on GPIO input pins"
-                                yield _w
-                                yield Label("dev mode:", classes="settings-label")
-                                _w = Switch(getattr(self.args, 'dev', False), id="switch-dev")
-                                _w.tooltip = "Log daemon output to journald — enables verbose output for 'gpionext journal'"
-                                yield _w
-                                yield Label("debug mode:", classes="settings-label")
-                                _w = Switch(getattr(self.args, 'debug', False), id="switch-debug")
-                                _w.tooltip = "Write detailed debug output to /opt/gpionext/logFile.txt"
-                                yield _w
-                            with Horizontal(classes="footer-buttons"):
-                                yield Button("\\[ + Save Settings ]", id="btn-save-settings",
-                                             classes="btn-global")
-                                yield Button("\\[ Set pins to default ]", id="btn-pins-default",
-                                             classes="btn-global")
+                                yield Label("\n[bold]Daemon Settings:[/]")
+                                with Grid(id="settings-grid"):
+                                    yield Label("combo_delay (ms):", classes="settings-label")
+                                    _w = Input(str(getattr(self.args, 'combo_delay', 50)),
+                                               id="input-combo-delay", classes="settings-input",
+                                               placeholder="50")
+                                    _w.tooltip = "Window (ms) for multi-button combos before input is processed (default: 50)"
+                                    yield _w
+                                    yield Label("key_hold_delay (ms):", classes="settings-label")
+                                    _w = Input(str(getattr(self.args, 'key_hold_delay', 350)),
+                                               id="input-key-hold-delay", classes="settings-input",
+                                               placeholder="350")
+                                    _w.tooltip = "Milliseconds before a held keyboard key begins repeating (default: 350)"
+                                    yield _w
+                                    yield Label("debounce (ms):", classes="settings-label")
+                                    _w = Input(str(getattr(self.args, 'debounce', 1)),
+                                               id="input-debounce", classes="settings-input",
+                                               placeholder="1")
+                                    _w.tooltip = "Ignore repeated GPIO signals within this window after a state change (default: 1)"
+                                    yield _w
+                                    yield Label("pins:", classes="settings-label")
+                                    _w = Input(_pins_to_str(self.args.pins),
+                                               id="input-pins", classes="settings-input",
+                                               placeholder="default")
+                                    _w.tooltip = "Comma-separated BOARD pin numbers to monitor. Leave blank or 'default' to use all available pins."
+                                    yield _w
+                                    yield Label("pulldown:", classes="settings-label")
+                                    _w = Switch(getattr(self.args, 'pulldown', False), id="switch-pulldown")
+                                    _w.tooltip = "Enable internal pull-down resistors on GPIO input pins"
+                                    yield _w
+                                    yield Label("dev mode:", classes="settings-label")
+                                    _w = Switch(getattr(self.args, 'dev', False), id="switch-dev")
+                                    _w.tooltip = "Log daemon output to journald — enables verbose output for 'gpionext journal'"
+                                    yield _w
+                                    yield Label("debug mode:", classes="settings-label")
+                                    _w = Switch(getattr(self.args, 'debug', False), id="switch-debug")
+                                    _w.tooltip = "Write detailed debug output to /opt/gpionext/logFile.txt"
+                                    yield _w
+                                with Horizontal(classes="footer-buttons"):
+                                    yield Button("\\[ + Save Settings ]", id="btn-save-settings",
+                                                 classes="btn-global")
+                                    yield Button("\\[ Set pins to default ]", id="btn-pins-default",
+                                                 classes="btn-global")
                 
                 with Vertical(id="right-panel"):
                     db_rows = SQL.getAllRows()
