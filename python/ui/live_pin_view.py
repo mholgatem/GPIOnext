@@ -25,6 +25,7 @@ sys.path.insert(0, _INSTALL_ROOT)
 sys.path.insert(0, '/opt/gpionext')
 
 import config.SQL as SQL
+from config.constants import BOARD_TO_GPIO
 
 try:
     import gpionext_core
@@ -154,7 +155,7 @@ class LivePinView(Static):
         
         pin_name = f"P{pin}"
         if pin < 64:
-            board_name = f"BOARD{pin}"
+            board_name = f"GPIO{BOARD_TO_GPIO.get(pin, '?')}"
         else:
             board_name = _display_pin_name(pin).split(' ')[-1] # Just the last part like "A0", "P6", "CH0"
         
@@ -179,7 +180,7 @@ class LivePinView(Static):
         lines = []
         lines.append("[bold cyan]GPIONEXT — LIVE PIN MONITOR (50ms refresh)[/]")
         lines.append("[dim]○ = OFF     [cyan]●[/] = ON[/]\n")
-        lines.append(f"[bold]  {'PIN':<6} {'BOARD':<10} {'STATE':<7} {'MAPPED TO'}[/]")
+        lines.append(f"[bold]  {'PIN':<6} {'GPIO':<10} {'STATE':<7} {'MAPPED TO'}[/]")
 
         # Separate pins into groups
         board_pins = [p for p in self.pins if p < 64]

@@ -123,9 +123,16 @@ class PinCaptureModal(SafeDismissMixin, ModalScreen[Optional[List[int]]]):
         if not _HAS_CORE:
             self._safe_dismiss(None)
             return
-        self.set_interval(0.05, self.poll_pins)
+        self._poll_timer = self.set_interval(0.05, self.poll_pins)
+
+    def _safe_dismiss(self, result) -> None:
+        if hasattr(self, "_poll_timer"):
+            self._poll_timer.stop()
+        super()._safe_dismiss(result)
 
     def poll_pins(self) -> None:
+        if self._dismissed:
+            return
         try:
             bitmask = gpionext_core.get_pin_states()
         except Exception:
@@ -523,7 +530,7 @@ class SplashScreen(Screen):
         "[#BD13FB bold]██║ ╚███║███████╗██╔╝ ██╗   ██║   [/]\n"
         "[#D000ff bold]╚═╝  ╚══╝╚══════╝╚═╝  ╚═╝   ╚═╝   [/]\n"
         "\n\n"
-        "[dim]GPIO Peripheral Manager for Raspberry Pi[/]\n\n"
+        "[dim]The best looking GPIO manager on Raspberry Pi![/]\n\n"
         "[dim italic]Press any key to continue...[/]"
     )
 
