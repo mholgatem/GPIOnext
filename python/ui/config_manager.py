@@ -45,7 +45,9 @@ try:
 except ImportError:
     _HAS_CORE = False
 
-_SERVICE_FILE = "/lib/systemd/system/gpionext.service"
+_SERVICE_FILE   = "/lib/systemd/system/gpionext.service"
+_VERSION_FILE   = "/opt/gpionext/VERSION"
+_GITHUB_REPO    = "mholgatem/GPIOnext"
 
 
 def _pins_to_str(pins) -> str:
@@ -493,6 +495,19 @@ class InputModal(SafeDismissMixin, ModalScreen[Optional[str]]):
 
 
 # ---------------------------------------------------------------------------
+# Version helpers
+# ---------------------------------------------------------------------------
+
+def _read_installed_version() -> Optional[str]:
+    """Return the version string from _VERSION_FILE, or None if the file is absent."""
+    try:
+        with open(_VERSION_FILE) as f:
+            return f.read().strip() or None
+    except OSError:
+        return None
+
+
+# ---------------------------------------------------------------------------
 # Splash Screen
 # ---------------------------------------------------------------------------
 
@@ -514,28 +529,36 @@ class SplashScreen(Screen):
     }
     """
 
-    _ART = (
+    _LOGO = (
         "[#00D2D3 bold]"
-        "[#00D2D3 bold] ██████╗ ██████╗ ██╗  ██████╗     [/]\n"
-        "[#13BFD7 bold]██╔════╝ ██╔══██╗██║ ██╔═══██╗    [/]\n"
-        "[#26ACDB bold]██║ ███╗ ██████╔╝██║ ██║   ██║    [/]\n"
-        "[#3999DF bold]██║  ██║ ██╔═══╝ ██║ ██║   ██║    [/]\n"
-        "[#4C86E3 bold]╚██████║ ██║     ██║ ╚██████╔╝    [/]\n"
-        "[#5F73E7 bold] ╚═════╝ ╚═╝     ╚═╝  ╚═════╝     [/]\n"
+        "[#00D2D3 bold]        ██████╗ ██████╗ ██╗  ██████╗     [/]\n"
+        "[#13BFD7 bold]       ██╔════╝ ██╔══██╗██║ ██╔═══██╗    [/]\n"
+        "[#26ACDB bold]       ██║ ███╗ ██████╔╝██║ ██║   ██║    [/]\n"
+        "[#3999DF bold]       ██║  ██║ ██╔═══╝ ██║ ██║   ██║    [/]\n"
+        "[#4C86E3 bold]       ╚██████║ ██║     ██║ ╚██████╔╝    [/]\n"
+        "[#5F73E7 bold]        ╚═════╝ ╚═╝     ╚═╝  ╚═════╝     [/]\n"
         "[#00D2D3 bold]                                  [/]\n"
-        "[#715FEB bold]███╗  ██╗███████╗██╗  ██╗████████╗[/]\n" 
-        "[#844CEF bold]████╗ ██║██╔════╝╚██╗██╔╝╚══██╔══╝[/]\n" 
-        "[#9739F3 bold]██╔██╗██║█████╗   ╚███╔╝    ██║   [/]\n"
-        "[#AA26F7 bold]██║╚████║██╔══╝   ██╔██╗    ██║   [/]\n"
-        "[#BD13FB bold]██║ ╚███║███████╗██╔╝ ██╗   ██║   [/]\n"
-        "[#D000ff bold]╚═╝  ╚══╝╚══════╝╚═╝  ╚═╝   ╚═╝   [/]\n"
-        "\n\n"
-        "[dim]The best looking GPIO manager on Raspberry Pi![/]\n\n"
-        "[dim italic]Press any key to continue...[/]"
+        "[#715FEB bold]       ███╗  ██╗███████╗██╗  ██╗████████╗[/]\n"
+        "[#844CEF bold]       ████╗ ██║██╔════╝╚██╗██╔╝╚══██╔══╝[/]\n"
+        "[#9739F3 bold]       ██╔██╗██║█████╗   ╚███╔╝    ██║   [/]\n"
+        "[#AA26F7 bold]       ██║╚████║██╔══╝   ██╔██╗    ██║   [/]\n"
+        "[#BD13FB bold]       ██║ ╚███║███████╗██╔╝ ██╗   ██║   [/]\n"
+        "[#D000ff bold]       ╚═╝  ╚══╝╚══════╝╚═╝  ╚═╝   ╚═╝   [/]"
     )
 
+    def _build_art(self, update_notice: str = "") -> str:
+        """Build the full splash content, optionally appending an update notice."""
+        art = ""
+        if self._installed_version:
+            art += f"[#00D2D3]              Version {self._installed_version}[/]\n\n"
+        art += self._LOGO
+        art += "\n\n[dim]The best looking GPIO manager on Raspberry Pi![/]\n\n"
+        art += "\n[dim italic]          Press any key to continue...[/]"
+        return art
+
     def compose(self) -> ComposeResult:
-        yield Static(self._ART, id="splash-content")
+        self._installed_version = _read_installed_version()
+        yield Static(self._build_art(), id="splash-content")
 
     def on_mount(self) -> None:
         self._dismissed = False

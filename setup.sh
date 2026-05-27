@@ -104,13 +104,28 @@ if $ONLY_UPDATE_CORE; then
         exit 1
     fi
 
+    INSTALLED_VERSION=""
+    if [ -f "${INSTALL_PATH}/VERSION" ]; then
+        INSTALLED_VERSION=$(cat "${INSTALL_PATH}/VERSION")
+    fi
+
+    if [ -n "$INSTALLED_VERSION" ] && [ "$INSTALLED_VERSION" = "$LATEST_TAG" ]; then
+        echo -e "${GREEN}Already on the latest version (${LATEST_TAG}). No update needed.${NONE}"
+        exit 0
+    fi
+
     BINARY_URL="https://github.com/${GITHUB_REPO}/releases/download/${LATEST_TAG}/${BINARY_NAME}"
     echo "Downloading $BINARY_URL..."
     if curl -sfL "$BINARY_URL" -o "$DEST"; then
         chmod 755 "$DEST"
         ln -sf "$DEST" "${INSTALL_PATH}/gpionext_core.so"
         echo -e "${GREEN}Binary updated successfully to ${LATEST_TAG}.${NONE}"
-        
+        VERSION_URL="https://github.com/${GITHUB_REPO}/releases/download/${LATEST_TAG}/VERSION"
+        if curl -sfL "$VERSION_URL" -o "${INSTALL_PATH}/VERSION"; then
+            echo -e "${GREEN}Version: $(cat "${INSTALL_PATH}/VERSION")${NONE}"
+        else
+            echo -e "${RED}Warning: could not download VERSION file.${NONE}"
+        fi
         echo -e "Restarting ${CYAN}${SERVICE_NAME}${NONE} service..."
         systemctl restart "$SERVICE_NAME"
         exit 0
@@ -264,6 +279,12 @@ else
         # Create a stable symlink so Python can find it regardless of arch suffix
         ln -sf "$DEST" "${INSTALL_PATH}/gpionext_core.so"
         echo -e "${GREEN}Binary downloaded successfully.${NONE}"
+        VERSION_URL="https://github.com/${GITHUB_REPO}/releases/download/${LATEST_TAG}/VERSION"
+        if curl -sfL "$VERSION_URL" -o "${INSTALL_PATH}/VERSION"; then
+            echo -e "${GREEN}Version: $(cat "${INSTALL_PATH}/VERSION")${NONE}"
+        else
+            echo -e "${RED}Warning: could not download VERSION file.${NONE}"
+        fi
         BINARY_OK=true
     else
         echo -e "${RED}Binary download failed for arch ${RUST_ARCH}.${NONE}"

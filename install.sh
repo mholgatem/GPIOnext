@@ -87,10 +87,29 @@ fi
 # Fetch and Extract
 # ---------------------------------------------------------------------------
 
-echo -e "${CYAN}Creating install directory ${INSTALL_PATH}...${NONE}"
+echo -e "${CYAN}Creating install directory ${INSTALL_PATH} if non-existent...${NONE}"
 mkdir -p "$INSTALL_PATH"
 
 if $UPDATE_MODE; then
+
+    LATEST_TAG=$(curl -sf "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" \
+        | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/') || LATEST_TAG=""
+
+    if [ -z "$LATEST_TAG" ]; then
+        echo -e "${RED}Could not determine latest release tag.${NONE}"
+        exit 1
+    fi
+
+    INSTALLED_VERSION=""
+    if [ -f "${INSTALL_PATH}/VERSION" ]; then
+        INSTALLED_VERSION=$(cat "${INSTALL_PATH}/VERSION")
+    fi
+
+    if [ -n "$INSTALLED_VERSION" ] && [ "$INSTALLED_VERSION" = "$LATEST_TAG" ]; then
+        echo -e "${GREEN}Already on the latest version (${LATEST_TAG}). No update needed.${NONE}"
+        exit 0
+    fi
+    
     echo -e "${CYAN}Update mode enabled: preserving user configurations...${NONE}"
     rm -rf "$BACKUP_DIR"
     mkdir -p "$BACKUP_DIR"
