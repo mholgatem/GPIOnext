@@ -342,8 +342,9 @@ pub fn on_pin_release(board_pin: u8) {
 /// over single-pin mappings when both match).
 ///
 /// Iterating `device_peripherals[device_index]` in longest-first order
-/// (guaranteed by `Config` construction) means the first `bitmask_in` match
-/// is the correct one.
+/// (guaranteed by `Config` construction) means the first unmatched-and-not-yet-pressed
+/// match is the correct one. Already-active peripherals are skipped so that holding
+/// an earlier-registered button does not block later-registered buttons from firing.
 ///
 /// # Parameters
 /// - `config`       : current configuration snapshot
@@ -352,6 +353,12 @@ pub fn on_pin_release(board_pin: u8) {
 fn resolve_and_dispatch(config: &Arc<Config>, device_index: usize, bitmask: [u64; 4]) {
     for peripheral in &config.device_peripherals[device_index] {
         if peripheral.bitmask_in(bitmask) {
+            // Skip peripherals already active — their press was already dispatched.
+            // Continuing allows a newly-pressed button to be found even when an
+            // earlier-registered button is held.
+            if peripheral.is_pressed.load(Ordering::SeqCst) {
+                continue;
+            }
             crate::uinput::dispatch_press(peripheral, config.key_hold_delay_ms);
             return;
         }
