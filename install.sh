@@ -9,6 +9,7 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 
 INSTALL_PATH="/opt/gpionext"
+SERVICE_NAME="gpionext"
 GITHUB_REPO="mholgatem/GPIOnext"
 NONE='\033[00m'
 CYAN='\033[36m'
