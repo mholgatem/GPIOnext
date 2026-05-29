@@ -153,11 +153,6 @@ pub fn dispatch_press(peripheral: &Arc<Peripheral>, key_hold_delay_ms: u64) {
                 });
             }
         }
-        // Block for Button/Axis to simulate hardware wait
-        match &peripheral.event_type {
-            EventType::Button { .. } | EventType::Axis { .. } => wait_for_release(peripheral),
-            _ => {}
-        }
         return;
     }
 
@@ -169,7 +164,6 @@ pub fn dispatch_press(peripheral: &Arc<Peripheral>, key_hold_delay_ms: u64) {
             EventType::Button { evdev_code } => {
                 write_event(fd, EV_KEY, *evdev_code as u16, 1);
                 write_sync(fd);
-                wait_for_release(peripheral);
             }
             EventType::Key { evdev_code } => {
                 write_event(fd, EV_KEY, *evdev_code as u16, 1);
@@ -196,7 +190,6 @@ pub fn dispatch_press(peripheral: &Arc<Peripheral>, key_hold_delay_ms: u64) {
             EventType::Axis { evdev_type, evdev_code, press_value } => {
                 write_event(fd, *evdev_type as u16, *evdev_code as u16, *press_value);
                 write_sync(fd);
-                wait_for_release(peripheral);
             }
             EventType::Command { bash } => {
                 let cmd = bash.clone();
@@ -413,8 +406,3 @@ fn write_sync(fd: RawFd) {
     write_event(fd, EV_SYN, SYN_REPORT, 0);
 }
 
-fn wait_for_release(peripheral: &Arc<Peripheral>) {
-    while peripheral.is_pressed.load(Ordering::Relaxed) {
-        std::thread::sleep(Duration::from_millis(10));
-    }
-}
