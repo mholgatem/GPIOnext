@@ -178,7 +178,7 @@ if $UPDATE_MODE; then
         cp "${BACKUP_DIR}/config.db" "$CONFIG_DB_PATH"
     fi
     
-    echo -e "${CYAN}${UNDERLINE}Configuring systemd service...${NONE}"
+    echo -e "${CYAN}Configuring systemd service...${NONE}"
 
     # add flags from old service file to new service file
     NEW_SERVICE_TEMPLATE="${INSTALL_PATH}/gpionext.service"
