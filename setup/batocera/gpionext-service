@@ -1,0 +1,47 @@
+#!/bin/bash
+# GPIOnext Batocera service daemon
+# Installed to /userdata/system/services/gpionext
+# Batocera's service manager calls: <service> start | stop | status
+
+INSTALL_PATH="/userdata/system/gpionext"
+PID_FILE="/run/gpionext.pid"
+DAEMON="${INSTALL_PATH}/venv/bin/python3"
+SCRIPT="${INSTALL_PATH}/python/gpionext.py"
+
+start() {
+    if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+        echo "gpionext is already running (PID: $(cat "$PID_FILE"))"
+        return 0
+    fi
+    "$DAEMON" -u "$SCRIPT" --debounce 1 --combo_delay 50 &
+    echo $! > "$PID_FILE"
+    echo "gpionext started (PID: $(cat "$PID_FILE"))"
+}
+
+stop() {
+    if [ -f "$PID_FILE" ]; then
+        kill "$(cat "$PID_FILE")" 2>/dev/null || true
+        rm -f "$PID_FILE"
+        echo "gpionext stopped"
+    else
+        echo "gpionext is not running"
+    fi
+}
+
+status() {
+    if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+        echo "gpionext running (PID: $(cat "$PID_FILE"))"
+    else
+        echo "gpionext stopped"
+    fi
+}
+
+case "${1:-}" in
+    start)  start  ;;
+    stop)   stop   ;;
+    status) status ;;
+    *)
+        echo "Usage: $0 {start|stop|status}"
+        exit 1
+        ;;
+esac

@@ -1,6 +1,7 @@
 #!/bin/bash
 # GPIOnext Bootstrap Installer
-# Downloads and extracts the requested version of GPIOnext and runs setup.sh
+# Downloads and extracts the requested version of GPIOnext and runs the
+# appropriate platform setup script (stock / batocera / recalbox).
 
 set -euo pipefail
 
@@ -8,9 +9,8 @@ set -euo pipefail
 # Constants
 # ---------------------------------------------------------------------------
 
-INSTALL_PATH="/opt/gpionext"
 SERVICE_NAME="gpionext"
-GITHUB_REPO="mholgatem/GPIOnext"
+GITHUB_REPO="mholgatem/gpionext-dev"
 NONE='\033[00m'
 CYAN='\033[36m'
 GREEN='\033[32m'
@@ -18,6 +18,29 @@ RED='\033[31m'
 FUSCHIA='\033[35m'
 UNDERLINE='\033[4m'
 BOLD='\033[1m'
+
+# ---------------------------------------------------------------------------
+# Platform detection
+# ---------------------------------------------------------------------------
+# Sets PLATFORM (stock | batocera | recalbox) and INSTALL_PATH accordingly.
+# Batocera: squashfs root + /userdata writable overlay, no systemd.
+# Recalbox: similar read-only root + /recalbox/share writable, no systemd.
+detect_platform() {
+    if [ -f /etc/batocera-release ]; then
+        PLATFORM="batocera"
+        INSTALL_PATH="/userdata/system/gpionext"
+    elif [ -d /recalbox/share ]; then
+        PLATFORM="recalbox"
+        INSTALL_PATH="/recalbox/share/system/gpionext"
+    else
+        PLATFORM="stock"
+        INSTALL_PATH="/opt/gpionext"
+    fi
+}
+
+detect_platform
+echo -e "${CYAN}Detected platform: ${BOLD}${PLATFORM}${NONE}"
+echo -e "${CYAN}Install path: ${INSTALL_PATH}${NONE}"
 
 # ---------------------------------------------------------------------------
 # Version Formatting
@@ -122,20 +145,15 @@ if $UPDATE_MODE; then
         cp "$CONFIG_DB_PATH" "${BACKUP_DIR}/config.db"
     fi
     
-    # 2. Extract and parse flags from the old service file before we delete it
+    # 2. On stock only: extract and preserve runtime flags from the systemd service file.
     OLD_FLAGS=""
-    if [ -f "$SERVICE_FILE" ]; then
+    if [ "$PLATFORM" = "stock" ] && [ -f "$SERVICE_FILE" ]; then
         echo "Extracting runtime flags from the legacy systemd configuration..."
-        # Extract the text after gpionext.py (handles both local and absolute paths)
         OLD_EXEC_START=$(grep -E '^ExecStart=' "$SERVICE_FILE" | head -n 1)
-        
-        # Use regex to strip off the prefix and capture everything after gpionext.py
         if [[ "$OLD_EXEC_START" =~ gpionext\.py[[:space:]]+(.*)$ ]]; then
             OLD_FLAGS="${BASH_REMATCH[1]}"
             echo "Found existing runtime flags: $OLD_FLAGS"
         fi
-        
-        # Back up the raw service file just in case the user wants a fallback reference
         cp "$SERVICE_FILE" "${BACKUP_DIR}/gpionext.service.old"
     fi
 
@@ -154,23 +172,25 @@ if curl -sfL "$SOURCE_URL" -o /tmp/gpionext.tar.gz; then
     find "$INSTALL_PATH" -mindepth 1 -maxdepth 1 ! -name "venv" ! -name "$(basename "$BACKUP_DIR")" -exec rm -rf {} +
 	
     echo -e "${CYAN}Extracting to ${INSTALL_PATH}...${NONE}"
-	mkdir -p "$INSTALL_PATH"
+    mkdir -p "$INSTALL_PATH"
     tar -xzf /tmp/gpionext.tar.gz -C "$INSTALL_PATH" --strip-components=1
     rm /tmp/gpionext.tar.gz
+    echo "$PLATFORM" > "${INSTALL_PATH}/PLATFORM"
 else
     echo -e "${RED}Error: Download failed for version ${VERSION}.${NONE}"
     exit 1
 fi
 
 # ---------------------------------------------------------------------------
-# Hand-off to setup.sh
+# Hand-off to platform setup script
 # ---------------------------------------------------------------------------
 
-if [ -f "${INSTALL_PATH}/setup.sh" ]; then
-    echo -e "${GREEN}Handing off to setup.sh...${NONE}"
-    bash "${INSTALL_PATH}/setup.sh" "${PASS_THROUGH_ARGS[@]}"
+PLATFORM_SETUP="${INSTALL_PATH}/setup/${PLATFORM}/setup.sh"
+if [ -f "$PLATFORM_SETUP" ]; then
+    echo -e "${GREEN}Handing off to setup/${PLATFORM}/setup.sh...${NONE}"
+    bash "$PLATFORM_SETUP" "${PASS_THROUGH_ARGS[@]}"
 else
-    echo -e "${RED}Error: setup.sh not found in extracted source.${NONE}"
+    echo -e "${RED}Error: setup/${PLATFORM}/setup.sh not found in extracted source.${NONE}"
     exit 1
 fi
 
@@ -180,41 +200,26 @@ if $UPDATE_MODE; then
         mkdir -p "${INSTALL_PATH}/config"
         cp "${BACKUP_DIR}/config.db" "$CONFIG_DB_PATH"
     fi
-    
-    echo -e "${CYAN}Configuring systemd service...${NONE}"
 
-    # add flags from old service file to new service file
-    NEW_SERVICE_TEMPLATE="${INSTALL_PATH}/gpionext.service"
-
-    if [ -f "$NEW_SERVICE_TEMPLATE" ]; then
-        # If we found old runtime flags from the backup phase, splice them into the template
-        if [ -n "${OLD_FLAGS:-}" ]; then
-            echo "Replacing template default flags with your saved runtime configurations..."
-            
-            # Escape special tokens safely for sed execution blocks
-            SAFE_FLAGS=$(echo "$OLD_FLAGS" | sed 's/[&/\]/\\&/g')
-            
-            # This regex matches 'gpionext.py' and clears out everything remaining on that line,
-            # replacing it strictly with 'gpionext.py' plus your custom extracted configuration flags.
-            sed -i "s|gpionext\.py.*$|gpionext.py $SAFE_FLAGS|g" "$NEW_SERVICE_TEMPLATE"
+    # On stock only: splice saved runtime flags back into the new service file.
+    if [ "$PLATFORM" = "stock" ]; then
+        echo -e "${CYAN}Configuring systemd service...${NONE}"
+        NEW_SERVICE_TEMPLATE="${INSTALL_PATH}/gpionext.service"
+        if [ -f "$NEW_SERVICE_TEMPLATE" ]; then
+            if [ -n "${OLD_FLAGS:-}" ]; then
+                echo "Replacing template default flags with your saved runtime configurations..."
+                SAFE_FLAGS=$(echo "$OLD_FLAGS" | sed 's/[&/\]/\\&/g')
+                sed -i "s|gpionext\.py.*$|gpionext.py $SAFE_FLAGS|g" "$NEW_SERVICE_TEMPLATE"
+            fi
+            cp "$NEW_SERVICE_TEMPLATE" "$SERVICE_FILE"
+            systemctl daemon-reload
+            systemctl enable "$SERVICE_NAME"
+        else
+            echo -e "${RED}Error: New service template configuration file not found.${NONE}"
+            exit 1
         fi
-
-        # Copy the customized file to the systemd runtime location
-        cp "$NEW_SERVICE_TEMPLATE" "$SERVICE_FILE"
-        
-        systemctl daemon-reload
-        systemctl enable "$SERVICE_NAME"
-    else
-        echo -e "${RED}Error: New service template configuration file not found.${NONE}"
-        exit 1
     fi
 
-    # Restore your database after the file tree has been updated
-    if $UPDATE_MODE && [ -f "${BACKUP_DIR}/config.db" ]; then
-        echo "Restoring configuration database..."
-        cp "${BACKUP_DIR}/config.db" "$CONFIG_DB_PATH"
-    fi
-    
     rm -rf "$BACKUP_DIR"
     echo -e "${GREEN}Update complete: user settings preserved.${NONE}"
 fi

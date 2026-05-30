@@ -64,7 +64,9 @@ fi
 
 SCRIPT=$(readlink -f "$0")
 SCRIPTPATH=$(dirname "$SCRIPT")
-cd "$SCRIPTPATH"
+# Resolve the repo root (two levels up from setup/stock/)
+REPOPATH=$(dirname "$(dirname "$SCRIPTPATH")")
+cd "$REPOPATH"
 
 # ---------------------------------------------------------------------------
 # Architecture detection
@@ -205,8 +207,8 @@ shopt -u nocasematch
 echo -e "${CYAN}${UNDERLINE}Installing system dependencies...${NONE}"
 
 # Install packages from apt-packages.txt
-if [ -f "${SCRIPTPATH}/apt-packages.txt" ]; then
-    xargs -a "${SCRIPTPATH}/apt-packages.txt" apt-get -y install
+if [ -f "${REPOPATH}/apt-packages.txt" ]; then
+    xargs -a "${REPOPATH}/apt-packages.txt" apt-get -y install
 else
     echo -e "${RED}Warning: apt-packages.txt not found. Skipping batch install.${NONE}"
 fi
@@ -245,8 +247,8 @@ python3 -m venv "${INSTALL_PATH}/venv"
 # Activate venv and install Python packages
 "${INSTALL_PATH}/venv/bin/pip" install --quiet --upgrade pip
 
-if [ -f "${SCRIPTPATH}/requirements.txt" ]; then
-    "${INSTALL_PATH}/venv/bin/pip" install --quiet -r "${SCRIPTPATH}/requirements.txt"
+if [ -f "${REPOPATH}/requirements.txt" ]; then
+    "${INSTALL_PATH}/venv/bin/pip" install --quiet -r "${REPOPATH}/requirements.txt"
 else
     echo -e "${RED}Warning: requirements.txt not found. Skipping pip install.${NONE}"
 fi
@@ -328,7 +330,7 @@ modprobe i2c-dev 2>/dev/null || true
 # ---------------------------------------------------------------------------
 
 echo -e "${CYAN}${UNDERLINE}Installing systemd service...${NONE}"
-cp "${SCRIPTPATH}/gpionext.service" "$SERVICE_FILE"
+cp "${REPOPATH}/gpionext.service" "$SERVICE_FILE"
 systemctl daemon-reload
 systemctl enable "$SERVICE_NAME"
 
@@ -337,7 +339,7 @@ systemctl enable "$SERVICE_NAME"
 # ---------------------------------------------------------------------------
 
 echo -e "${CYAN}${UNDERLINE}Installing CLI wrapper...${NONE}"
-cp "${SCRIPTPATH}/usr-bin-gpionext" "$CLI_BIN"
+cp "${REPOPATH}/usr-bin-gpionext" "$CLI_BIN"
 chmod 755 "$CLI_BIN"
 
 # ---------------------------------------------------------------------------
