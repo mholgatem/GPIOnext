@@ -25,6 +25,7 @@ sys.path.insert(0, _INSTALL_ROOT)
 sys.path.insert(0, '/opt/gpionext')
 
 import config.SQL as SQL
+from config.constants import BOARD_TO_GPIO
 
 try:
     import gpionext_core
@@ -89,13 +90,12 @@ class LivePinView(Static):
 
     DEFAULT_CSS = """
     LivePinView {
-        width: 100%;
-        height: 1fr;
+        width: auto;
+        height: auto;
         background: $background;
         color: $text;
-        border: solid $border;
+        border: solid #2C363F;
         padding: 1 2;
-        overflow-y: auto;
     }
     """
 
@@ -106,6 +106,28 @@ class LivePinView(Static):
         super().__init__(**kwargs)
         self.pins = sorted(pins)
         self.pin_labels = build_pin_labels(pins, db_rows)
+
+    def get_content_width(self, container, viewport) -> int:
+        """
+        Return the natural render width so Rich does not wrap long labels.
+
+        When the natural width exceeds the container's display width, the parent
+        ScrollableContainer's overflow-x: auto shows a horizontal scrollbar.
+        Returns max(container.width, natural) so the widget always fills the
+        panel when labels are short (avoiding unnecessary horizontal scroll).
+
+        Parameters:
+            container: Size of the parent container (has .width attribute).
+            viewport:  Size of the viewport (unused).
+
+        Returns:
+            Integer column count for Rich to render at.
+        """
+        max_label = max((len(v) for v in self.pin_labels.values()), default=20)
+        # Line format: "  {pin:<6} {board:<10} {state:<7} {label}"
+        # = 2 + 6 + 1 + 10 + 1 + 7 + 1 = 28 fixed chars + label length
+        natural = 28 + max_label
+        return max(container.width, natural)
 
     def on_mount(self) -> None:
         """Start the polling interval on mount."""
@@ -133,7 +155,7 @@ class LivePinView(Static):
         
         pin_name = f"P{pin}"
         if pin < 64:
-            board_name = f"BOARD{pin}"
+            board_name = f"GPIO{BOARD_TO_GPIO.get(pin, '?')}"
         else:
             board_name = _display_pin_name(pin).split(' ')[-1] # Just the last part like "A0", "P6", "CH0"
         
@@ -156,9 +178,9 @@ class LivePinView(Static):
     def render(self) -> RenderResult:
         """Render the pin monitor table."""
         lines = []
-        lines.append("[bold cyan]GPIONEXT — LIVE PIN MONITOR[/]")
+        lines.append("[bold cyan]GPIONEXT — LIVE PIN MONITOR (50ms refresh)[/]")
         lines.append("[dim]○ = OFF     [cyan]●[/] = ON[/]\n")
-        lines.append(f"[bold]  {'PIN':<6} {'BOARD':<10} {'STATE':<7} {'MAPPED TO'}[/]")
+        lines.append(f"[bold]  {'PIN':<6} {'GPIO':<10} {'STATE':<7} {'MAPPED TO'}[/]")
 
         # Separate pins into groups
         board_pins = [p for p in self.pins if p < 64]

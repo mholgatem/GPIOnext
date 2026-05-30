@@ -4,6 +4,8 @@ constants.py — Pin lists, evdev mappings, and device definitions.
 No RPi.GPIO import: Pi model detection uses /proc/cpuinfo so this module
 works without any GPIO library installed (safe to import on desktop too).
 """
+from typing import Dict, List, Optional, Tuple
+
 import os
 
 # ---------------------------------------------------------------------------
@@ -61,6 +63,28 @@ else:
 AVAILABLE_PINS_STRING: str = ', '.join(map(str, AVAILABLE_PINS))
 
 # ---------------------------------------------------------------------------
+# BOARD pin → GPIO (BCM) number mapping
+# ---------------------------------------------------------------------------
+
+# Pi 1 A/B rev 1: original 26-pin header with old BCM numbering (GPIO 0/1 for I2C, GPIO 21 for pin 13)
+_BOARD_TO_GPIO_REV1: Dict[int, int] = {
+    3: 0, 5: 1, 7: 4, 8: 14, 10: 15, 11: 17, 12: 18, 13: 21,
+    15: 22, 16: 23, 18: 24, 19: 10, 21: 9, 22: 25, 23: 11, 24: 8, 26: 7,
+}
+
+# Pi 1 B rev 2 and all later models: modern BCM numbering (GPIO 2/3 for I2C, GPIO 27 for pin 13)
+_BOARD_TO_GPIO_REV2: Dict[int, int] = {
+    3: 2,  5: 3,  7: 4,  8: 14, 10: 15, 11: 17, 12: 18, 13: 27,
+    15: 22, 16: 23, 18: 24, 19: 10, 21: 9, 22: 25, 23: 11, 24: 8, 26: 7,
+    27: 0, 28: 1,
+    29: 5, 31: 6, 32: 12, 33: 13, 35: 19, 36: 16, 37: 26, 38: 20, 40: 21,
+}
+
+BOARD_TO_GPIO: Dict[int, int] = (
+    _BOARD_TO_GPIO_REV1 if _PI_REVISION == 1 else _BOARD_TO_GPIO_REV2
+)
+
+# ---------------------------------------------------------------------------
 # i2c pin ID generation
 # ---------------------------------------------------------------------------
 
@@ -108,10 +132,10 @@ def pcf8574_pin_id(address: int, pin: int) -> str:
 
 
 def available_i2c_pins(
-    mcp23017_addresses: list[int] | None = None,
-    ads1115_addresses: list[int] | None = None,
-    pcf8574_addresses: list[int] | None = None,
-) -> list[str]:
+    mcp23017_addresses: Optional[List[int]] = None,
+    ads1115_addresses: Optional[List[int]] = None,
+    pcf8574_addresses: Optional[List[int]] = None,
+) -> List[str]:
     """
     Return a list of all i2c pin IDs for connected chips.
     Used to populate the config UI pin list alongside physical GPIO pins.
@@ -124,7 +148,7 @@ def available_i2c_pins(
     Returns:
         list[str]: sorted list of pin ID strings
     """
-    pins: list[str] = []
+    pins = []  # type: List[str]
     for addr in (mcp23017_addresses or []):
         for port in ('A', 'B'):
             for bit in range(8):
@@ -151,7 +175,7 @@ COMMAND_PRESETS = [
 # device_index in Rust corresponds to position in this list
 # ---------------------------------------------------------------------------
 
-DEVICE_LIST: list[str] = [
+DEVICE_LIST = [  # type: List[str]
     'Joypad 1',   # device_index 0
     'Joypad 2',   # device_index 1
     'Joypad 3',   # device_index 2
@@ -160,7 +184,7 @@ DEVICE_LIST: list[str] = [
     'Commands',   # device_index 5
 ]
 
-DEVICE_INDEX: dict[str, int] = {name: i for i, name in enumerate(DEVICE_LIST)}
+DEVICE_INDEX = {name: i for i, name in enumerate(DEVICE_LIST)}  # type: Dict[str, int]
 
 # ---------------------------------------------------------------------------
 # Joystick axis definition (EV_ABS AbsInfo)
@@ -180,7 +204,7 @@ except ImportError:
 
 try:
     from evdev import ecodes as e
-    BUTTON_LIST: list[tuple[str, int]] = [
+    BUTTON_LIST = [  # type: List[Tuple[str, int]]
         ('Start Button',           e.BTN_START),
         ('Select Button',          e.BTN_SELECT),
         ('Button A',               e.BTN_A),
@@ -218,7 +242,7 @@ try:
         ('Button Generic 23',      e.BTN_TRIGGER_HAPPY24),
     ]
 
-    KEY_LIST: list[tuple[str, int]] = [
+    KEY_LIST = [  # type: List[Tuple[str, int]]
         ('↑ UP',               e.KEY_UP),
         ('↓ DOWN',             e.KEY_DOWN),
         ('← LEFT',             e.KEY_LEFT),

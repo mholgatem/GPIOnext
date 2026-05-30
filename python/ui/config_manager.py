@@ -7,6 +7,7 @@ Migrated to Textual for a modern async TUI.
 import argparse
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -14,13 +15,13 @@ import time
 from typing import List, Dict, Optional, Any, Tuple, Set
 
 from textual.app import App, ComposeResult
-from textual.containers import Container, Horizontal, Vertical, Grid
+from textual.containers import Container, Horizontal, Vertical, Grid, ScrollableContainer
 from textual.widgets import (
     Header, Footer, Static, Button, Label, TabbedContent, TabPane, 
     DataTable, Input, Checkbox, Select, Switch, SelectionList
 )
 from textual.widgets.selection_list import Selection
-from textual.screen import ModalScreen
+from textual.screen import ModalScreen, Screen
 from textual import on, work
 from textual.reactive import reactive
 
@@ -44,11 +45,46 @@ try:
 except ImportError:
     _HAS_CORE = False
 
+_SERVICE_FILE   = "/lib/systemd/system/gpionext.service"
+_VERSION_FILE   = "/opt/gpionext/VERSION"
+_GITHUB_REPO    = "mholgatem/GPIOnext"
+
+
+def _pins_to_str(pins) -> str:
+    """
+    Convert a pins value (list of ints or comma-separated string) to a
+    display string suitable for the Daemon Settings Input widget.
+
+    Parameters:
+        pins: list of int pin numbers, or a comma-separated string.
+
+    Returns:
+        Comma-separated string of sorted pin numbers, or the original string.
+    """
+    if isinstance(pins, str):
+        return pins
+    return ','.join(str(p) for p in sorted(pins))
+
+
 # ---------------------------------------------------------------------------
 # Modal Screens
 # ---------------------------------------------------------------------------
 
-class PinCaptureModal(ModalScreen[Optional[List[int]]]):
+class SafeDismissMixin:
+    """Mixin that prevents double-dismiss (ScreenStackError on Textual 0.43.2)."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._dismissed = False
+
+    def _safe_dismiss(self, result) -> None:
+        if self._dismissed:
+            return
+        self._dismissed = True
+        self.dismiss(result)
+
+
+class PinCaptureModal(SafeDismissMixin, ModalScreen[Optional[List[int]]]):
     """Modal screen for capturing GPIO pin input."""
 
     DEFAULT_CSS = """
@@ -87,11 +123,18 @@ class PinCaptureModal(ModalScreen[Optional[List[int]]]):
 
     def on_mount(self) -> None:
         if not _HAS_CORE:
-            self.dismiss(None)
+            self._safe_dismiss(None)
             return
-        self.set_interval(0.05, self.poll_pins)
+        self._poll_timer = self.set_interval(0.05, self.poll_pins)
+
+    def _safe_dismiss(self, result) -> None:
+        if hasattr(self, "_poll_timer"):
+            self._poll_timer.stop()
+        super()._safe_dismiss(result)
 
     def poll_pins(self) -> None:
+        if self._dismissed:
+            return
         try:
             bitmask = gpionext_core.get_pin_states()
         except Exception:
@@ -117,15 +160,15 @@ class PinCaptureModal(ModalScreen[Optional[List[int]]]):
 
         if self.hold_start and (time.time() - self.hold_start) >= self.hold_seconds:
             pins = [bit for bit in range(256) if bitmask & (1 << bit)]
-            self.dismiss(pins)
+            self._safe_dismiss(pins)
 
     @on(Button.Pressed, "#cancel")
     def cancel_capture(self) -> None:
-        self.dismiss(None)
+        self._safe_dismiss(None)
 
     def on_key(self, event) -> None:
         if event.key == "escape":
-            self.dismiss(None)
+            self._safe_dismiss(None)
 
 
 class ConfirmModal(ModalScreen[bool]):
@@ -171,7 +214,7 @@ class ConfirmModal(ModalScreen[bool]):
             self.dismiss(False)
 
 
-class MultiSelectionModal(ModalScreen[Optional[List[Any]]]):
+class MultiSelectionModal(SafeDismissMixin, ModalScreen[Optional[List[Any]]]):
     """Modal screen for selecting multiple items from a list."""
 
     DEFAULT_CSS = """
@@ -207,14 +250,14 @@ class MultiSelectionModal(ModalScreen[Optional[List[Any]]]):
 
     @on(Button.Pressed, "#cancel")
     def handle_cancel(self) -> None:
-        self.dismiss(None)
+        self._safe_dismiss(None)
 
     def on_key(self, event) -> None:
         if event.key == "escape":
-            self.dismiss(None)
+            self._safe_dismiss(None)
 
 
-class SingleSelectionModal(ModalScreen[Optional[Any]]):
+class SingleSelectionModal(SafeDismissMixin, ModalScreen[Optional[Any]]):
     """Modal screen for selecting a single item from a list."""
 
     DEFAULT_CSS = """
@@ -247,14 +290,14 @@ class SingleSelectionModal(ModalScreen[Optional[Any]]):
 
     @on(Button.Pressed, "#cancel")
     def handle_cancel(self) -> None:
-        self.dismiss(None)
+        self._safe_dismiss(None)
 
     def on_key(self, event) -> None:
         if event.key == "escape":
-            self.dismiss(None)
+            self._safe_dismiss(None)
 
 
-class CommandInputModal(ModalScreen[Optional[Tuple[str, int]]]):
+class CommandInputModal(SafeDismissMixin, ModalScreen[Optional[Tuple[str, int]]]):
     """Modal screen for configuring a command with an optional timeout."""
 
     DEFAULT_CSS = """
@@ -300,11 +343,11 @@ class CommandInputModal(ModalScreen[Optional[Tuple[str, int]]]):
 
     @on(Button.Pressed, "#cancel")
     def handle_cancel(self) -> None:
-        self.dismiss(None)
+        self._safe_dismiss(None)
 
     def on_key(self, event) -> None:
         if event.key == "escape":
-            self.dismiss(None)
+            self._safe_dismiss(None)
 
 
 class NextCommandModal(ModalScreen[Optional[str]]):
@@ -345,7 +388,7 @@ class NextCommandModal(ModalScreen[Optional[str]]):
             self.dismiss(None)
 
 
-class AddI2cModal(ModalScreen[Optional[Tuple[str, int, int, Optional[int]]]]):
+class AddI2cModal(SafeDismissMixin, ModalScreen[Optional[Tuple[str, int, int, Optional[int]]]]):
     """Modal for adding an I2C chip."""
 
     DEFAULT_CSS = """
@@ -402,14 +445,14 @@ class AddI2cModal(ModalScreen[Optional[Tuple[str, int, int, Optional[int]]]]):
 
     @on(Button.Pressed, "#cancel")
     def handle_cancel(self) -> None:
-        self.dismiss(None)
+        self._safe_dismiss(None)
 
     def on_key(self, event) -> None:
         if event.key == "escape":
-            self.dismiss(None)
+            self._safe_dismiss(None)
 
 
-class InputModal(ModalScreen[Optional[str]]):
+class InputModal(SafeDismissMixin, ModalScreen[Optional[str]]):
     """Modal screen for getting text input."""
 
     DEFAULT_CSS = """
@@ -444,11 +487,91 @@ class InputModal(ModalScreen[Optional[str]]):
 
     @on(Button.Pressed, "#cancel")
     def handle_cancel(self) -> None:
-        self.dismiss(None)
+        self._safe_dismiss(None)
 
     def on_key(self, event) -> None:
         if event.key == "escape":
-            self.dismiss(None)
+            self._safe_dismiss(None)
+
+
+# ---------------------------------------------------------------------------
+# Version helpers
+# ---------------------------------------------------------------------------
+
+def _read_installed_version() -> Optional[str]:
+    """Return the version string from _VERSION_FILE, or None if the file is absent."""
+    try:
+        with open(_VERSION_FILE) as f:
+            return f.read().strip() or None
+    except OSError:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Splash Screen
+# ---------------------------------------------------------------------------
+
+class SplashScreen(Screen):
+    """Full-screen splash displayed at startup; auto-dismisses after 2.5 s or on keypress."""
+
+    DEFAULT_CSS = """
+    SplashScreen {
+        align: center middle;
+        background: #151B23;
+    }
+    #splash-content {
+        width: auto;
+        height: auto;
+        content-align: center middle;
+        text-align: left;
+        padding: 2 4;
+        border: double #00D2D3;
+    }
+    """
+
+    _LOGO = (
+        "[#00D2D3 bold]"
+        "[#00D2D3 bold]        ██████╗ ██████╗ ██╗  ██████╗     [/]\n"
+        "[#13BFD7 bold]       ██╔════╝ ██╔══██╗██║ ██╔═══██╗    [/]\n"
+        "[#26ACDB bold]       ██║ ███╗ ██████╔╝██║ ██║   ██║    [/]\n"
+        "[#3999DF bold]       ██║  ██║ ██╔═══╝ ██║ ██║   ██║    [/]\n"
+        "[#4C86E3 bold]       ╚██████║ ██║     ██║ ╚██████╔╝    [/]\n"
+        "[#5F73E7 bold]        ╚═════╝ ╚═╝     ╚═╝  ╚═════╝     [/]\n"
+        "[#00D2D3 bold]                                  [/]\n"
+        "[#715FEB bold]       ███╗  ██╗███████╗██╗  ██╗████████╗[/]\n"
+        "[#844CEF bold]       ████╗ ██║██╔════╝╚██╗██╔╝╚══██╔══╝[/]\n"
+        "[#9739F3 bold]       ██╔██╗██║█████╗   ╚███╔╝    ██║   [/]\n"
+        "[#AA26F7 bold]       ██║╚████║██╔══╝   ██╔██╗    ██║   [/]\n"
+        "[#BD13FB bold]       ██║ ╚███║███████╗██╔╝ ██╗   ██║   [/]\n"
+        "[#D000ff bold]       ╚═╝  ╚══╝╚══════╝╚═╝  ╚═╝   ╚═╝   [/]"
+    )
+
+    def _build_art(self, update_notice: str = "") -> str:
+        """Build the full splash content, optionally appending an update notice."""
+        art = ""
+        if self._installed_version:
+            art += f"[#00D2D3]              Version {self._installed_version}[/]\n\n"
+        art += self._LOGO
+        art += "\n\n[dim]The best looking GPIO manager on Raspberry Pi![/]\n\n"
+        art += "\n[dim italic]          Press any key to continue...[/]"
+        return art
+
+    def compose(self) -> ComposeResult:
+        self._installed_version = _read_installed_version()
+        yield Static(self._build_art(), id="splash-content")
+
+    def on_mount(self) -> None:
+        self._dismissed = False
+        self.set_timer(5, self._do_dismiss)
+
+    def on_key(self, event) -> None:
+        self._do_dismiss()
+
+    def _do_dismiss(self) -> None:
+        if self._dismissed:
+            return
+        self._dismissed = True
+        self.app.pop_screen()
 
 
 # ---------------------------------------------------------------------------
@@ -506,19 +629,47 @@ class ConfigurationApp(App):
         width: 40%;
         height: 1fr;
     }
+    #pin-scroll {
+        height: 1fr;
+        overflow-y: auto;
+        overflow-x: auto;
+    }
+    #preset-scroll {
+        height: 1fr;
+        overflow-y: auto;
+        overflow-x: auto;
+    }
+    #settings-grid {
+        grid-size: 2;
+        grid-columns: 1fr 1fr;
+        grid-rows: auto;
+        margin: 1 0;
+        height: auto;
+    }
+    .settings-label {
+        padding: 1 0;
+        content-align: left middle;
+    }
+    .settings-input {
+        width: 100%;
+    }
 
     TabbedContent {
         height: 100%;
     }
 
     Tabs {
-        background: $surface;
+        background: $background;
     }
 
     Tab.-active {
         background: $background;
         color: $warning;
         text-style: bold;
+    }
+
+    Tab:hover {
+        text-style: reverse;
     }
 
     TabbedContent #--content {
@@ -544,6 +695,8 @@ class ConfigurationApp(App):
     #tab-presets {
         background: $background;
         color: $accent;
+        overflow-y: auto;
+        overflow-x: hidden;
     }
     
     .btn-global {
@@ -586,6 +739,16 @@ class ConfigurationApp(App):
         align: left middle;
     }
 
+    .header-buttons {
+        height: 5;
+        align: center middle;
+    }
+
+    .header-buttons Button {
+        margin: 0 1;
+        border: round $border;
+    }
+    
     .footer-buttons {
         height: 5;
         margin-top: 1;
@@ -621,7 +784,18 @@ class ConfigurationApp(App):
         color: $success;
         border: round $success;
     }
-    
+
+    #btn-save-settings {
+        color: $success;
+        border: round $success;
+    }
+
+    #btn-pins-default {
+        color: $warning;
+        border: round $warning;
+        background: $background;
+    }
+
     #btn-export {
         color: $warning;
         border: round $warning;
@@ -751,6 +925,7 @@ class ConfigurationApp(App):
         return args
 
     def on_mount(self) -> None:
+        self.push_screen(SplashScreen())
         self.refresh_mappings_table()
         self.refresh_i2c_table()
         self._stop_daemon()
@@ -807,19 +982,64 @@ class ConfigurationApp(App):
                                     yield Button("\\[ - Remove Selected Chip ]", id="btn-remove-i2c", classes="btn-global")
                         
                         with TabPane("\\[ Presets & Config ]", id="tab-presets"):
-                            yield Label("[bold]HAT Presets:[/]")
-                            yield Select([(get_display_name(p), p) for p in get_preset_names()], id="select-preset")
-                            yield Button("\\[ + Apply Preset ]", id="btn-apply-preset", classes="btn-global")
-                            
-                            yield Label("\n[bold]Configuration Management:[/]")
-                            with Horizontal(classes="footer-buttons"):
-                                yield Button("\\[ Export JSON → ]", id="btn-export", classes="btn-global")
-                                yield Button("\\[ → Import JSON ]", id="btn-import", classes="btn-global")
+                            with ScrollableContainer(id="preset-scroll"):
+                                with Horizontal(classes="header-buttons"):
+                                    yield Button("\\[ Export JSON → ]", id="btn-export", classes="btn-global")
+                                    yield Button("\\[ → Import JSON ]", id="btn-import", classes="btn-global")
+                                    
+                                yield Label("[bold]HAT Presets:[/]")
+                                yield Select([(get_display_name(p), p) for p in get_preset_names()], id="select-preset")
+                                yield Button("\\[ + Apply Preset ]", id="btn-apply-preset", classes="btn-global")
+
+                                yield Label("\n[bold]Daemon Settings:[/]")
+                                with Grid(id="settings-grid"):
+                                    yield Label("combo_delay (ms):", classes="settings-label")
+                                    _w = Input(str(getattr(self.args, 'combo_delay', 50)),
+                                               id="input-combo-delay", classes="settings-input",
+                                               placeholder="50")
+                                    _w.tooltip = "Window (ms) for multi-button combos before input is processed (default: 50)"
+                                    yield _w
+                                    yield Label("key_hold_delay (ms):", classes="settings-label")
+                                    _w = Input(str(getattr(self.args, 'key_hold_delay', 350)),
+                                               id="input-key-hold-delay", classes="settings-input",
+                                               placeholder="350")
+                                    _w.tooltip = "Milliseconds before a held keyboard key begins repeating (default: 350)"
+                                    yield _w
+                                    yield Label("debounce (ms):", classes="settings-label")
+                                    _w = Input(str(getattr(self.args, 'debounce', 1)),
+                                               id="input-debounce", classes="settings-input",
+                                               placeholder="1")
+                                    _w.tooltip = "Ignore repeated GPIO signals within this window after a state change (default: 1)"
+                                    yield _w
+                                    yield Label("pins:", classes="settings-label")
+                                    _w = Input(_pins_to_str(self.args.pins),
+                                               id="input-pins", classes="settings-input",
+                                               placeholder="default")
+                                    _w.tooltip = "Comma-separated BOARD pin numbers to monitor. Leave blank or 'default' to use all available pins."
+                                    yield _w
+                                    yield Label("pulldown:", classes="settings-label")
+                                    _w = Switch(getattr(self.args, 'pulldown', False), id="switch-pulldown")
+                                    _w.tooltip = "Enable internal pull-down resistors on GPIO input pins"
+                                    yield _w
+                                    yield Label("dev mode:", classes="settings-label")
+                                    _w = Switch(getattr(self.args, 'dev', False), id="switch-dev")
+                                    _w.tooltip = "Log daemon output to journald — enables verbose output for 'gpionext journal'"
+                                    yield _w
+                                    yield Label("debug mode:", classes="settings-label")
+                                    _w = Switch(getattr(self.args, 'debug', False), id="switch-debug")
+                                    _w.tooltip = "Write detailed debug output to /opt/gpionext/logFile.txt"
+                                    yield _w
+                                with Horizontal(classes="footer-buttons"):
+                                    yield Button("\\[ + Save Settings ]", id="btn-save-settings",
+                                                 classes="btn-global")
+                                    yield Button("\\[ Set pins to default ]", id="btn-pins-default",
+                                                 classes="btn-global")
                 
                 with Vertical(id="right-panel"):
                     db_rows = SQL.getAllRows()
                     pins_to_show = self._get_pins_to_show()
-                    yield LivePinView(pins_to_show, db_rows, id="live-monitor")
+                    with ScrollableContainer(id="pin-scroll"):
+                        yield LivePinView(pins_to_show, db_rows, id="live-monitor")
 
             with Horizontal(id="custom-footer"):
                 yield Label("Q", classes="footer-key")
@@ -900,11 +1120,10 @@ class ConfigurationApp(App):
         
         # Update systemd service file
         try:
-            service_file = "/lib/systemd/system/gpionext.service"
-            if os.path.exists(service_file):
-                with open(service_file, 'r') as f:
+            if os.path.exists(_SERVICE_FILE):
+                with open(_SERVICE_FILE, 'r') as f:
                     lines = f.readlines()
-                with open(service_file, 'w') as f:
+                with open(_SERVICE_FILE, 'w') as f:
                     for line in lines:
                         if line.startswith('ExecStart='):
                             line = line.replace(' --use_i2c', '')
@@ -927,12 +1146,12 @@ class ConfigurationApp(App):
         monitor = self.query_one("#live-monitor", LivePinView)
         monitor.pins = sorted(pins_to_show)
         monitor.update_labels(SQL.getAllRows())
-        self.notify(f"I2C Hardware {'enabled' if event.value else 'disabled'}.")
+        self.notify(f"I2C Hardware {'enabled (may require restart of gpionext config)' if event.value else 'disabled'}.")
 
     @on(Button.Pressed, "#btn-add-i2c")
     @work
     async def handle_add_i2c(self) -> None:
-        result = await self.push_screen_wait(AddI2cModal())
+        result = await self.push_screen(AddI2cModal(), wait_for_dismiss=True)
         if result:
             chip_type, bus, address, int_pin = result
             table_name = f"I2C_{chip_type}"
@@ -980,7 +1199,7 @@ class ConfigurationApp(App):
         
         if not db_table: return
         
-        confirm = await self.push_screen_wait(ConfirmModal("Remove Chip", f"Remove this {prefix.upper()} chip?"))
+        confirm = await self.push_screen(ConfirmModal("Remove Chip", f"Remove this {prefix.upper()} chip?"), wait_for_dismiss=True)
         if confirm:
             try:
                 SQL._cursor.execute(f"DELETE FROM {db_table} WHERE id = ?", (int(db_id),))
@@ -1012,10 +1231,10 @@ class ConfigurationApp(App):
             device_name = row_data[1]
             mapping_name = row_data[2]
             
-            confirm = await self.push_screen_wait(ConfirmModal(
+            confirm = await self.push_screen(ConfirmModal(
                 "Delete Mapping", 
                 f"Are you sure you want to delete '{mapping_name}' from {device_name}?"
-            ))
+            ), wait_for_dismiss=True)
             if confirm:
                 SQL.deleteEntry({'id': row_id})
                 self.notify(f"Mapping '{mapping_name}' deleted.")
@@ -1037,16 +1256,16 @@ class ConfigurationApp(App):
             
         options = [(dev, dev) for dev in configured_devices]
         
-        device_to_clear = await self.push_screen_wait(SingleSelectionModal(
+        device_to_clear = await self.push_screen(SingleSelectionModal(
             "Select Device to Clear",
             options
-        ))
+        ), wait_for_dismiss=True)
         
         if device_to_clear:
-            confirm = await self.push_screen_wait(ConfirmModal(
+            confirm = await self.push_screen(ConfirmModal(
                 "Clear Device", 
                 f"Are you sure you want to delete ALL mappings for {device_to_clear}?"
-            ))
+            ), wait_for_dismiss=True)
             
             if confirm:
                 SQL.deleteDevice(device_to_clear)
@@ -1081,7 +1300,7 @@ class ConfigurationApp(App):
 
         while True:
             # 1. Ask for command and timeout
-            result = await self.push_screen_wait(CommandInputModal(COMMAND_PRESETS))
+            result = await self.push_screen(CommandInputModal(COMMAND_PRESETS), wait_for_dismiss=True)
             if result is None:
                 self.notify("Configuration cancelled", severity="warning")
                 return
@@ -1096,7 +1315,7 @@ class ConfigurationApp(App):
 
             # 3. Ask for pins (only if we aren't appending to the same button)
             if current_pins_str is None:
-                pins = await self.push_screen_wait(PinCaptureModal(f"Command {cmd_count}"))
+                pins = await self.push_screen(PinCaptureModal(f"Command {cmd_count}"), wait_for_dismiss=True)
                 if pins is None:
                     self.notify("Configuration cancelled", severity="warning")
                     return
@@ -1109,7 +1328,7 @@ class ConfigurationApp(App):
                 last_entry[3] = f"{last_entry[3]} ||| {final_cmd}"
 
             # 4. Ask what to do next
-            next_step = await self.push_screen_wait(NextCommandModal())
+            next_step = await self.push_screen(NextCommandModal(), wait_for_dismiss=True)
             
             if next_step == "SAME_BUTTON":
                 # Do not clear current_pins_str, do not increment cmd_count
@@ -1137,19 +1356,19 @@ class ConfigurationApp(App):
         # Overwrite Check
         existing = [r for r in SQL.getAllRows() if r['device'] == device_name]
         if existing:
-            confirm = await self.push_screen_wait(ConfirmModal(
+            confirm = await self.push_screen(ConfirmModal(
                 "Overwrite Device", 
                 f"{device_name} is already configured. This will overwrite your current configuration. Continue?"
-            ))
+            ), wait_for_dismiss=True)
             if not confirm:
                 return
 
         # 1. Select keys to configure
-        selected_keys = await self.push_screen_wait(MultiSelectionModal(
+        selected_keys = await self.push_screen(MultiSelectionModal(
             "Select Keys to Configure",
             KEY_LIST,
             defaults={key[1] for key in KEY_LIST[:4]} # Default to first 4 (arrows usually)
-        ))
+        ), wait_for_dismiss=True)
         if selected_keys is None: return
 
         self.notify("Starting Keyboard wizard")
@@ -1158,7 +1377,7 @@ class ConfigurationApp(App):
         # 2. Iterate through selected keys
         for key_code in selected_keys:
             key_name = next(name for name, code in KEY_LIST if code == key_code)
-            pins = await self.push_screen_wait(PinCaptureModal(f"Keyboard: {key_name}"))
+            pins = await self.push_screen(PinCaptureModal(f"Keyboard: {key_name}"), wait_for_dismiss=True)
             if pins is None:
                 self.notify("Configuration cancelled", severity="warning")
                 return
@@ -1175,27 +1394,27 @@ class ConfigurationApp(App):
         # Overwrite Check
         existing = [r for r in SQL.getAllRows() if r['device'] == device_name]
         if existing:
-            confirm = await self.push_screen_wait(ConfirmModal(
+            confirm = await self.push_screen(ConfirmModal(
                 "Overwrite Device", 
                 f"{device_name} is already configured. This will overwrite your current configuration. Continue?"
-            ))
+            ), wait_for_dismiss=True)
             if not confirm:
                 return
 
         # 1. Ask for axis (DPad) count
-        axis_count = await self.push_screen_wait(SingleSelectionModal(
+        axis_count = await self.push_screen(SingleSelectionModal(
             "Configure Joypad", 
             [("No DPad/Joysticks", 0), ("1 DPad/Joystick", 1), ("2 DPad/Joysticks", 2), ("3 DPad/Joysticks", 3), ("4 DPad/Joysticks", 4)],
             value=1
-        ))
+        ), wait_for_dismiss=True)
         if axis_count is None: return
 
         # 2. Select buttons to configure
-        selected_buttons = await self.push_screen_wait(MultiSelectionModal(
+        selected_buttons = await self.push_screen(MultiSelectionModal(
             "Select Buttons to Configure",
             BUTTON_LIST,
             defaults={btn[1] for btn in BUTTON_LIST[:8]} # Default to first 8 common buttons
-        ))
+        ), wait_for_dismiss=True)
         if selected_buttons is None: return
 
         self.notify(f"Starting wizard for {device_name}")
@@ -1210,7 +1429,7 @@ class ConfigurationApp(App):
                 ('RIGHT', (0,  255)),
             ):
                 label = f'DPAD {i} {direction}'
-                pins = await self.push_screen_wait(PinCaptureModal(f"{device_name}: {label}"))
+                pins = await self.push_screen(PinCaptureModal(f"{device_name}: {label}"), wait_for_dismiss=True)
                 if pins is None:
                     self.notify("Configuration cancelled", severity="warning")
                     return
@@ -1219,7 +1438,7 @@ class ConfigurationApp(App):
         # Buttons
         for btn_code in selected_buttons:
             btn_name = next(name for name, code in BUTTON_LIST if code == btn_code)
-            pins = await self.push_screen_wait(PinCaptureModal(f"{device_name}: {btn_name}"))
+            pins = await self.push_screen(PinCaptureModal(f"{device_name}: {btn_name}"), wait_for_dismiss=True)
             if pins is None:
                 self.notify("Configuration cancelled", severity="warning")
                 return
@@ -1239,10 +1458,10 @@ class ConfigurationApp(App):
             return
             
         display_name = get_display_name(preset_key)
-        confirm = await self.push_screen_wait(ConfirmModal(
+        confirm = await self.push_screen(ConfirmModal(
             "Load HAT Preset", 
             f"Apply '{display_name}'? This will overwrite existing mappings for affected devices."
-        ))
+        ), wait_for_dismiss=True)
         
         if confirm:
             rows = preset_to_db_rows(preset_key)
@@ -1266,11 +1485,11 @@ class ConfigurationApp(App):
     async def handle_export(self) -> None:
         """Export the current configuration to a JSON file."""
         default_path = os.path.join(self._get_user_home(), "gpionext_config.json")
-        filepath = await self.push_screen_wait(InputModal(
+        filepath = await self.push_screen(InputModal(
             "Export Configuration",
             placeholder="Path to save JSON...",
             default_value=default_path
-        ))
+        ), wait_for_dismiss=True)
         if not filepath:
             return
             
@@ -1287,11 +1506,11 @@ class ConfigurationApp(App):
     async def handle_import(self) -> None:
         """Import configuration from a JSON file."""
         default_path = os.path.join(self._get_user_home(), "gpionext_config.json")
-        filepath = await self.push_screen_wait(InputModal(
+        filepath = await self.push_screen(InputModal(
             "Import Configuration",
             placeholder="Path to JSON file...",
             default_value=default_path
-        ))
+        ), wait_for_dismiss=True)
         if not filepath:
             return
             
@@ -1299,10 +1518,10 @@ class ConfigurationApp(App):
             self.notify(f"File not found: {filepath}", severity="error")
             return
             
-        confirm = await self.push_screen_wait(ConfirmModal(
+        confirm = await self.push_screen(ConfirmModal(
             "Import Configuration", 
             "This will overwrite all current device mappings. Are you sure?"
-        ))
+        ), wait_for_dismiss=True)
         
         if confirm:
             try:
@@ -1327,6 +1546,123 @@ class ConfigurationApp(App):
                 self.notify(f"Configuration imported from {filepath}")
             except Exception as e:
                 self.notify(f"Import error: {e}", severity="error")
+
+    def _patch_service_flags(self, combo_delay: int, key_hold_delay: int,
+                              debounce: int, pins_str: str,
+                              pulldown: bool, dev: bool, debug: bool) -> None:
+        """
+        Patch the ExecStart line in the systemd service file with new flag values,
+        then daemon-reload and restart the gpionext service.
+
+        Parameters:
+            combo_delay:     --combo_delay value in ms
+            key_hold_delay:  --key_hold_delay value in ms
+            debounce:        --debounce value in ms
+            pins_str:        --pins value as a string; 'default' or '' omits the flag
+            pulldown:        whether to include --pulldown flag
+            dev:             whether to include --dev flag
+            debug:           whether to include --debug flag
+        """
+        if not os.path.exists(_SERVICE_FILE):
+            self.notify("Service file not found — running outside Pi?", severity="warning")
+            return
+
+        with open(_SERVICE_FILE, 'r') as f:
+            content = f.read()
+
+        def _strip_managed_flags(line: str) -> str:
+            # Remove flags managed by this panel from the ExecStart line
+            for flag in ('--combo_delay', '--key_hold_delay', '--debounce',
+                         '--pulldown', '--dev', '--debug'):
+                line = re.sub(r'\s+' + re.escape(flag) + r'(\s+\S+)?', '', line)
+            line = re.sub(r'\s+--pins\s+\S+', '', line)
+            return line.rstrip()
+
+        new_lines = []
+        for line in content.splitlines(keepends=True):
+            if line.startswith('ExecStart='):
+                line = _strip_managed_flags(line)
+                line += f' --combo_delay {combo_delay}'
+                line += f' --key_hold_delay {key_hold_delay}'
+                line += f' --debounce {debounce}'
+                if pins_str and pins_str.lower() != 'default':
+                    line += f' --pins {pins_str.replace(" ", "")}'
+                if pulldown:
+                    line += ' --pulldown'
+                if dev:
+                    line += ' --dev'
+                if debug:
+                    line += ' --debug'
+                line += '\n'
+            new_lines.append(line)
+
+        with open(_SERVICE_FILE, 'w') as f:
+            f.writelines(new_lines)
+
+        # daemon-reload registers the updated unit file; the daemon itself is
+        # stopped while the config tool runs and will start with the new flags
+        # when the config tool exits (see action_quit).
+        subprocess.call(['systemctl', 'daemon-reload'])
+
+    @on(Button.Pressed, "#btn-pins-default")
+    def handle_pins_default(self) -> None:
+        """Reset the pins Input to the full default BOARD pin list."""
+        self.query_one("#input-pins", Input).value = AVAILABLE_PINS_STRING
+
+    @on(Button.Pressed, "#btn-save-settings")
+    @work
+    async def handle_save_settings(self) -> None:
+        """
+        Read the Daemon Settings widgets, validate inputs, patch the service file,
+        restart the daemon, and refresh the live pin monitor if the pins list changed.
+        """
+        combo_delay_str = self.query_one("#input-combo-delay", Input).value.strip()
+        key_hold_str    = self.query_one("#input-key-hold-delay", Input).value.strip()
+        debounce_str    = self.query_one("#input-debounce", Input).value.strip()
+        pins_str        = self.query_one("#input-pins", Input).value.strip()
+        pulldown        = self.query_one("#switch-pulldown", Switch).value
+        dev             = self.query_one("#switch-dev", Switch).value
+        debug           = self.query_one("#switch-debug", Switch).value
+
+        try:
+            combo_delay    = int(combo_delay_str) if combo_delay_str else 50
+            key_hold_delay = int(key_hold_str)    if key_hold_str    else 350
+            debounce       = int(debounce_str)    if debounce_str    else 1
+        except ValueError:
+            self.notify("combo_delay, key_hold_delay, and debounce must be whole numbers.",
+                        severity="error")
+            return
+
+        old_pins_str = _pins_to_str(self.args.pins)
+        pins_changed = pins_str != old_pins_str
+
+        # Update in-memory args to keep the rest of the UI consistent
+        self.args.combo_delay    = combo_delay
+        self.args.key_hold_delay = key_hold_delay
+        self.args.debounce       = debounce
+        self.args.pulldown       = pulldown
+        self.args.dev            = dev
+        self.args.debug          = debug
+        if pins_str and pins_str.lower() != 'default':
+            self.args.pins = [int(x.strip()) for x in pins_str.split(',') if x.strip()]
+        else:
+            from config.constants import AVAILABLE_PINS
+            self.args.pins = list(AVAILABLE_PINS)
+
+        try:
+            self._patch_service_flags(combo_delay, key_hold_delay, debounce,
+                                       pins_str, pulldown, dev, debug)
+            self.notify("Settings saved. New settings take effect when you exit the config tool.")
+        except Exception as e:
+            self.notify(f"Failed to save settings: {e}", severity="error")
+            return
+
+        if pins_changed:
+            pins_to_show = self._get_pins_to_show()
+            monitor = self.query_one("#live-monitor", LivePinView)
+            monitor.pins = sorted(pins_to_show)
+            monitor.update_labels(SQL.getAllRows())
+            self.notify("Pin list updated — live monitor refreshed.", timeout=5)
 
     def _pins_to_str(self, pins: List[int]) -> str:
         out = []
@@ -1405,12 +1741,13 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='GPIOnext Configuration Manager')
     parser.add_argument('--pins', default=AVAILABLE_PINS_STRING)
     parser.add_argument('--use_i2c', action='store_true')
+    parser.add_argument('--combo_delay', type=int, default=50)
+    parser.add_argument('--key_hold_delay', type=int, default=350)
+    parser.add_argument('--debounce', type=int, default=1)
+    parser.add_argument('--pulldown', action='store_true')
+    parser.add_argument('--dev', action='store_true')
+    parser.add_argument('--debug', action='store_true')
     args, unknown = parser.parse_known_args()
     
     app = ConfigurationApp(args)
     app.run()
-
-
-()
-
-

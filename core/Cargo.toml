@@ -12,7 +12,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # PyO3: Python↔Rust bridge. extension-module feature required for .so builds.
-pyo3 = { version = "0.23", features = ["extension-module", "abi3-py311"] }
+pyo3 = { version = "0.23", features = ["extension-module", "abi3-py37"] }
 
 # Rayon: fixed-size thread pool for combo resolution (replaces unbounded threading.Timer).
 rayon = "1.9"
