@@ -10,7 +10,7 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 
 SERVICE_NAME="gpionext"
-GITHUB_REPO="mholgatem/gpionext-dev"
+GITHUB_REPO="mholgatem/GPIOnext"
 NONE='\033[00m'
 CYAN='\033[36m'
 GREEN='\033[32m'
