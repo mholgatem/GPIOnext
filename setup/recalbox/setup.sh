@@ -192,6 +192,44 @@ modprobe evdev   2>/dev/null || true
 modprobe i2c-dev 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
+# I2C boot configuration
+# Recalbox's /boot is a FAT partition — mount it if not already mounted.
+# Adds dtparam=i2c_arm=on and dtparam=i2c1=on if not already present.
+# ---------------------------------------------------------------------------
+
+enable_i2c_boot_config() {
+    local BOOT_CFG="$1"
+    local CHANGED=false
+
+    if ! grep -q 'dtparam=i2c_arm=on' "$BOOT_CFG" 2>/dev/null; then
+        echo 'dtparam=i2c_arm=on' >> "$BOOT_CFG"
+        CHANGED=true
+    fi
+    if ! grep -q 'dtparam=i2c1=on' "$BOOT_CFG" 2>/dev/null; then
+        echo 'dtparam=i2c1=on' >> "$BOOT_CFG"
+        CHANGED=true
+    fi
+
+    if $CHANGED; then
+        echo -e "${GREEN}I2C dtparam lines added to ${BOOT_CFG} — reboot required for I2C to work.${NONE}"
+    else
+        echo -e "${GREEN}I2C already enabled in ${BOOT_CFG}${NONE}"
+    fi
+}
+
+# Try /boot/config.txt (mounted) or /boot/firmware/config.txt (Pi 5 Bookworm)
+if [ -f /boot/config.txt ]; then
+    enable_i2c_boot_config /boot/config.txt
+elif [ -f /boot/firmware/config.txt ]; then
+    enable_i2c_boot_config /boot/firmware/config.txt
+else
+    echo -e "${FUSCHIA}NOTE: /boot/config.txt not found.${NONE}"
+    echo "  To enable I2C, mount /boot and add:"
+    echo "    dtparam=i2c_arm=on"
+    echo "    dtparam=i2c1=on"
+fi
+
+# ---------------------------------------------------------------------------
 # udev rule (SDL2 / emulator compatibility)
 # ---------------------------------------------------------------------------
 
@@ -221,6 +259,9 @@ fi
 cat >> "$CUSTOM_SH" << 'HOOKEOF'
 
 # GPIOnext begin
+modprobe uinput  2>/dev/null || true
+modprobe evdev   2>/dev/null || true
+modprobe i2c-dev 2>/dev/null || true
 cp /recalbox/share/system/gpionext/bin/gpionext /tmp/gpionext 2>/dev/null && chmod +x /tmp/gpionext
 cp /recalbox/share/system/gpionext/bin/gpionext-config /tmp/gpionext-config 2>/dev/null && chmod +x /tmp/gpionext-config
 /tmp/gpionext \

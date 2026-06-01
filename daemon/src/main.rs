@@ -111,7 +111,11 @@ impl RuntimeSettings {
             debounce:       args.debounce.unwrap_or(d.debounce),
             pins,
             pulldown:  args.pulldown || d.pulldown,
-            use_i2c:   args.use_i2c,
+            // Enable I2C if explicitly requested on CLI, or if the config has chips configured.
+        use_i2c: args.use_i2c
+            || !cfg.i2c.mcp23017.is_empty()
+            || !cfg.i2c.ads1115.is_empty()
+            || !cfg.i2c.pcf8574.is_empty(),
         }
     }
 }

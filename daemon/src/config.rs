@@ -54,7 +54,7 @@ impl Default for DaemonSettings {
             key_hold_delay: 350,
             debounce: 1,
             pins: "default".into(),
-            pulldown: true,
+            pulldown: false, // pull-up is standard: pin held high, button connects to GND
             dev: false,
             debug: false,
         }
