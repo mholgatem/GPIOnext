@@ -4,16 +4,16 @@
 # Installs GPIOnext to /recalbox/share/system/gpionext.
 #
 # Recalbox uses a read-only root filesystem; /recalbox/share is the writable
-# user data partition. systemd is not available; startup is handled by
-# injecting a block into /recalbox/share/system/custom.sh.
+# user data partition. Python is not available (and not needed) — GPIOnext
+# ships as two standalone Rust binaries:
+#   - gpionext          : the GPIO → uinput daemon
+#   - gpionext-config   : the Ratatui TUI configuration tool
 #
-# NOTE: /recalbox/share does NOT support symlinks (FAT32 or similar).
-# Python venv is therefore unusable here. Dependencies are installed via
-# pip --target into pylib/ and PYTHONPATH is set at runtime. All ln -sf
-# calls are replaced with cp.
+# NOTE: /recalbox/share is mounted noexec on some Recalbox versions.
+# Both binaries are copied to /tmp at startup to work around this.
 #
-# Usage: bash setup/recalbox/setup.sh [--update-core]
-#   --update-core   Only refresh the Rust binary from GitHub
+# Usage: bash setup/recalbox/setup.sh [--update]
+#   --update   Only refresh binaries from GitHub, restart daemon if running
 
 set -euo pipefail
 
@@ -22,7 +22,7 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 
 INSTALL_PATH="/recalbox/share/system/gpionext"
-PYLIB="${INSTALL_PATH}/pylib"
+BIN_DIR="${INSTALL_PATH}/bin"
 GITHUB_REPO="mholgatem/GPIOnext"
 PID_FILE="/run/gpionext.pid"
 CUSTOM_SH="/recalbox/share/system/custom.sh"
@@ -43,10 +43,10 @@ BOLD='\033[1m'
 # Flags
 # ---------------------------------------------------------------------------
 
-ONLY_UPDATE_CORE=false
+ONLY_UPDATE=false
 for arg in "$@"; do
     case $arg in
-        --update-core) ONLY_UPDATE_CORE=true ;;
+        --update) ONLY_UPDATE=true ;;
     esac
 done
 
@@ -65,29 +65,6 @@ SCRIPTPATH=$(dirname "$SCRIPT")
 REPOPATH=$(dirname "$(dirname "$SCRIPTPATH")")
 
 # ---------------------------------------------------------------------------
-# Pip detection helper
-# Sets PIP_CMD to the first usable pip invocation, or empty string.
-# ---------------------------------------------------------------------------
-find_pip() {
-    if python3 -m pip --version &>/dev/null 2>&1; then
-        PIP_CMD="python3 -m pip"
-    elif command -v pip3 &>/dev/null; then
-        PIP_CMD="pip3"
-    elif command -v pip &>/dev/null; then
-        PIP_CMD="pip"
-    else
-        echo -e "${CYAN}pip not found — attempting ensurepip bootstrap...${NONE}"
-        python3 -m ensurepip --upgrade 2>/dev/null || true
-        if python3 -m pip --version &>/dev/null 2>&1; then
-            PIP_CMD="python3 -m pip"
-        else
-            PIP_CMD=""
-            echo -e "${RED}pip unavailable. Python packages must be installed manually.${NONE}"
-        fi
-    fi
-}
-
-# ---------------------------------------------------------------------------
 # Architecture detection
 # ---------------------------------------------------------------------------
 
@@ -104,22 +81,48 @@ case "$ARCH" in
 esac
 
 echo -e "${CYAN}${BOLD}GPIOnext Installer — Recalbox${NONE}"
-echo -e "Architecture: ${FUSCHIA}$ARCH${NONE} → binary: gpionext_core-${RUST_ARCH}.so"
+echo -e "Architecture: ${FUSCHIA}$ARCH${NONE} → binaries: *-${RUST_ARCH}"
 echo
 
 # ---------------------------------------------------------------------------
-# Core update only path
+# Helper: download a binary from the latest GitHub release
 # ---------------------------------------------------------------------------
 
-if $ONLY_UPDATE_CORE; then
-    echo -e "${CYAN}${BOLD}Updating Rust extension binary only...${NONE}"
+download_binary() {
+    local NAME="$1"      # filename on the release page
+    local DEST="$2"      # where to write it
+    local LATEST_TAG="$3"
 
-    BINARY_NAME="gpionext_core-${RUST_ARCH}.so"
-    DEST="${INSTALL_PATH}/gpionext_core.so"
+    local URL="https://github.com/${GITHUB_REPO}/releases/download/${LATEST_TAG}/${NAME}"
+    echo "Downloading ${URL}..."
+    if curl -sfL "$URL" -o "$DEST"; then
+        chmod +x "$DEST"
+        echo -e "${GREEN}Downloaded ${NAME}${NONE}"
+        return 0
+    else
+        echo -e "${RED}Failed to download ${NAME}${NONE}"
+        return 1
+    fi
+}
 
-    LATEST_TAG=$(curl -sf "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" \
-        | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/') || LATEST_TAG=""
-    [ -z "$LATEST_TAG" ] && { echo -e "${RED}Could not determine latest release tag.${NONE}"; exit 1; }
+# ---------------------------------------------------------------------------
+# Fetch latest release tag
+# ---------------------------------------------------------------------------
+
+LATEST_TAG=$(curl -sf "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" \
+    | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/') || LATEST_TAG=""
+
+if [ -z "$LATEST_TAG" ]; then
+    echo -e "${RED}Could not determine latest release tag. Check internet connection.${NONE}"
+    LATEST_TAG="unknown"
+fi
+
+# ---------------------------------------------------------------------------
+# Update-only path: refresh binaries and optionally restart daemon
+# ---------------------------------------------------------------------------
+
+if $ONLY_UPDATE; then
+    echo -e "${CYAN}${BOLD}Updating GPIOnext binaries...${NONE}"
 
     INSTALLED_VERSION=""
     [ -f "${INSTALL_PATH}/VERSION" ] && INSTALLED_VERSION=$(cat "${INSTALL_PATH}/VERSION")
@@ -129,77 +132,55 @@ if $ONLY_UPDATE_CORE; then
         exit 0
     fi
 
-    BINARY_URL="https://github.com/${GITHUB_REPO}/releases/download/${LATEST_TAG}/${BINARY_NAME}"
-    echo "Downloading $BINARY_URL..."
-    if curl -sfL "$BINARY_URL" -o "$DEST"; then
-        curl -sfL "https://github.com/${GITHUB_REPO}/releases/download/${LATEST_TAG}/VERSION" \
-            -o "${INSTALL_PATH}/VERSION" 2>/dev/null || true
-        echo -e "${GREEN}Binary updated to ${LATEST_TAG}.${NONE}"
-        if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
-            kill "$(cat "$PID_FILE")" && rm -f "$PID_FILE"
-            PYTHONPATH="$PYLIB" python3 -u \
-                "${INSTALL_PATH}/python/gpionext.py" --debounce 1 --combo_delay 50 &
-            echo $! > "$PID_FILE"
-        fi
-        exit 0
-    else
-        echo -e "${RED}Binary download failed.${NONE}"
-        exit 1
+    mkdir -p "$BIN_DIR"
+    download_binary "gpionext-${RUST_ARCH}"        "${BIN_DIR}/gpionext"        "$LATEST_TAG" || true
+    download_binary "gpionext-config-${RUST_ARCH}" "${BIN_DIR}/gpionext-config" "$LATEST_TAG" || true
+    echo "$LATEST_TAG" > "${INSTALL_PATH}/VERSION"
+
+    # Restart daemon if currently running
+    if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+        kill "$(cat "$PID_FILE")" && rm -f "$PID_FILE"
+        cp "${BIN_DIR}/gpionext" /tmp/gpionext && chmod +x /tmp/gpionext
+        /tmp/gpionext \
+            --config "${INSTALL_PATH}/config/gpionext.json" \
+            --debounce 1 --combo_delay 50 &
+        echo $! > "$PID_FILE"
+        echo -e "${GREEN}Daemon restarted (PID: $(cat "$PID_FILE"))${NONE}"
     fi
+
+    exit 0
 fi
 
 # ---------------------------------------------------------------------------
-# Directory structure
+# Full install
 # ---------------------------------------------------------------------------
 
 echo -e "${CYAN}${UNDERLINE}Setting up directory structure at ${INSTALL_PATH}...${NONE}"
 mkdir -p "${INSTALL_PATH}/config"
-mkdir -p "$PYLIB"
+mkdir -p "$BIN_DIR"
 echo "recalbox" > "${INSTALL_PATH}/PLATFORM"
 
 # ---------------------------------------------------------------------------
-# Python dependencies (no venv — filesystem does not support symlinks)
+# Download binaries
 # ---------------------------------------------------------------------------
 
-echo -e "${CYAN}${UNDERLINE}Installing Python dependencies...${NONE}"
-find_pip
-if [ -n "${PIP_CMD:-}" ]; then
-    if [ -f "${REPOPATH}/requirements.txt" ]; then
-        $PIP_CMD install --quiet --target "$PYLIB" -r "${REPOPATH}/requirements.txt"
-        echo -e "${GREEN}Python packages installed to ${PYLIB}${NONE}"
-    else
-        echo -e "${RED}Warning: requirements.txt not found. Skipping pip install.${NONE}"
+echo -e "${CYAN}${UNDERLINE}Downloading GPIOnext binaries...${NONE}"
+
+BINARY_OK=false
+if [ -n "$LATEST_TAG" ] && [ "$LATEST_TAG" != "unknown" ]; then
+    D_OK=true
+    download_binary "gpionext-${RUST_ARCH}"        "${BIN_DIR}/gpionext"        "$LATEST_TAG" || D_OK=false
+    download_binary "gpionext-config-${RUST_ARCH}" "${BIN_DIR}/gpionext-config" "$LATEST_TAG" || D_OK=false
+    if $D_OK; then
+        echo "$LATEST_TAG" > "${INSTALL_PATH}/VERSION"
+        BINARY_OK=true
     fi
 fi
 
-# ---------------------------------------------------------------------------
-# Rust extension binary
-# Download directly as gpionext_core.so — no symlink needed or possible.
-# ---------------------------------------------------------------------------
-
-echo -e "${CYAN}${UNDERLINE}Downloading Rust extension binary...${NONE}"
-
-BINARY_NAME="gpionext_core-${RUST_ARCH}.so"
-DEST="${INSTALL_PATH}/gpionext_core.so"
-
-LATEST_TAG=$(curl -sf "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" \
-    | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/') || LATEST_TAG=""
-
-BINARY_OK=false
-if [ -n "$LATEST_TAG" ]; then
-    BINARY_URL="https://github.com/${GITHUB_REPO}/releases/download/${LATEST_TAG}/${BINARY_NAME}"
-    echo "Downloading $BINARY_URL..."
-    if curl -sfL "$BINARY_URL" -o "$DEST"; then
-        curl -sfL "https://github.com/${GITHUB_REPO}/releases/download/${LATEST_TAG}/VERSION" \
-            -o "${INSTALL_PATH}/VERSION" 2>/dev/null || true
-        echo -e "${GREEN}Binary downloaded: $(cat "${INSTALL_PATH}/VERSION" 2>/dev/null || echo "$LATEST_TAG")${NONE}"
-        BINARY_OK=true
-    else
-        echo -e "${RED}Binary download failed for arch ${RUST_ARCH}.${NONE}"
-    fi
-else
-    echo -e "${RED}Could not determine latest release tag. Check internet connection.${NONE}"
-    echo "  Place binary manually at: ${DEST}"
+if ! $BINARY_OK; then
+    echo -e "${RED}Binary download failed. Place them manually:${NONE}"
+    echo "  ${BIN_DIR}/gpionext"
+    echo "  ${BIN_DIR}/gpionext-config"
 fi
 
 # ---------------------------------------------------------------------------
@@ -223,6 +204,7 @@ udevadm trigger 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
 # Startup hook in custom.sh
+# Copies binaries to /tmp before running to work around noexec mount.
 # ---------------------------------------------------------------------------
 
 echo -e "${CYAN}${UNDERLINE}Registering startup hook in ${CUSTOM_SH}...${NONE}"
@@ -231,19 +213,24 @@ echo -e "${CYAN}${UNDERLINE}Registering startup hook in ${CUSTOM_SH}...${NONE}"
 chmod 755 "$CUSTOM_SH"
 
 if grep -q '# GPIOnext begin' "$CUSTOM_SH"; then
-    echo "Startup hook already present — skipping."
-else
-    cat >> "$CUSTOM_SH" << 'HOOKEOF'
+    echo "Startup hook already present — updating..."
+    # Remove old block and rewrite
+    sed -i '/# GPIOnext begin/,/# GPIOnext end/d' "$CUSTOM_SH"
+fi
+
+cat >> "$CUSTOM_SH" << 'HOOKEOF'
 
 # GPIOnext begin
-PYTHONPATH=/recalbox/share/system/gpionext/pylib \
-    python3 -u /recalbox/share/system/gpionext/python/gpionext.py \
+cp /recalbox/share/system/gpionext/bin/gpionext /tmp/gpionext 2>/dev/null && chmod +x /tmp/gpionext
+cp /recalbox/share/system/gpionext/bin/gpionext-config /tmp/gpionext-config 2>/dev/null && chmod +x /tmp/gpionext-config
+/tmp/gpionext \
+    --config /recalbox/share/system/gpionext/config/gpionext.json \
     --debounce 1 --combo_delay 50 &
 echo $! > /run/gpionext.pid
 # GPIOnext end
 HOOKEOF
-    echo -e "${GREEN}Startup hook written.${NONE}"
-fi
+
+echo -e "${GREEN}Startup hook written.${NONE}"
 
 # ---------------------------------------------------------------------------
 # EmulationStation custom system entry
@@ -273,22 +260,19 @@ else
 fi
 
 echo -e "${GREEN}ES system entry written to ${ES_CUSTOM_CFG}${NONE}"
-echo -e "${FUSCHIA}Note: verify path on your Recalbox version — restart ES for changes to take effect.${NONE}"
 
 # ---------------------------------------------------------------------------
-# ROM .sh files
+# ROM .sh shortcuts for EmulationStation
 # ---------------------------------------------------------------------------
 
 echo -e "${CYAN}${UNDERLINE}Creating EmulationStation ROM shortcuts...${NONE}"
 mkdir -p "$ROMS_DIR"
 
-# Each script is launched by ES as a "game"; ES suspends while it runs,
-# giving the script raw console/framebuffer context — curses works directly.
-
 cat > "${ROMS_DIR}/Start GPIOnext.sh" << 'ROMEOF'
 #!/bin/bash
-PYTHONPATH=/recalbox/share/system/gpionext/pylib \
-    python3 -u /recalbox/share/system/gpionext/python/gpionext.py \
+cp /recalbox/share/system/gpionext/bin/gpionext /tmp/gpionext 2>/dev/null && chmod +x /tmp/gpionext
+/tmp/gpionext \
+    --config /recalbox/share/system/gpionext/config/gpionext.json \
     --debounce 1 --combo_delay 50 &
 echo $! > /run/gpionext.pid
 sleep 2
@@ -305,13 +289,13 @@ ROMEOF
 
 cat > "${ROMS_DIR}/Configure GPIOnext.sh" << 'ROMEOF'
 #!/bin/bash
-PYTHONPATH=/recalbox/share/system/gpionext/pylib \
-    python3 /recalbox/share/system/gpionext/python/ui/config_manager.py
+cp /recalbox/share/system/gpionext/bin/gpionext-config /tmp/gpionext-config 2>/dev/null && chmod +x /tmp/gpionext-config
+/tmp/gpionext-config --config /recalbox/share/system/gpionext/config/gpionext.json
 ROMEOF
 
 cat > "${ROMS_DIR}/Update GPIOnext.sh" << 'ROMEOF'
 #!/bin/bash
-curl -sfL https://raw.githubusercontent.com/mholgatem/gpionext-dev/main/install.sh | bash
+bash /recalbox/share/system/gpionext/setup/recalbox/setup.sh --update
 ROMEOF
 
 cat > "${ROMS_DIR}/Remove GPIOnext.sh" << 'ROMEOF'
@@ -330,21 +314,28 @@ clear
 echo
 echo -e "${GREEN}${BOLD}GPIOnext installation complete! (Recalbox)${NONE}"
 echo
+echo -e "Install path: ${CYAN}${INSTALL_PATH}${NONE}"
+echo -e "Daemon:       ${CYAN}${BIN_DIR}/gpionext${NONE}"
+echo -e "Config tool:  ${CYAN}${BIN_DIR}/gpionext-config${NONE}"
+echo
 
 if ! $BINARY_OK; then
-    echo -e "${RED}WARNING: Rust extension binary not installed.${NONE}"
-    echo "  Place it at: ${DEST}"
+    echo -e "${RED}WARNING: Binaries not downloaded. Place them manually at:${NONE}"
+    echo "  ${BIN_DIR}/gpionext"
+    echo "  ${BIN_DIR}/gpionext-config"
     echo
 fi
 
-read -rp $'\e[35m\e[4mStart GPIOnext now?\e[0m [Y/N] ' USER_INPUT
+read -rp $'\e[35m\e[4mStart GPIOnext daemon now?\e[0m [Y/N] ' USER_INPUT
 if [[ "$USER_INPUT" =~ ^[Yy] ]]; then
-    PYTHONPATH="$PYLIB" python3 -u \
-        "${INSTALL_PATH}/python/gpionext.py" --debounce 1 --combo_delay 50 &
+    cp "${BIN_DIR}/gpionext" /tmp/gpionext 2>/dev/null && chmod +x /tmp/gpionext
+    /tmp/gpionext \
+        --config "${INSTALL_PATH}/config/gpionext.json" \
+        --debounce 1 --combo_delay 50 &
     echo $! > "$PID_FILE"
     echo -e "${GREEN}GPIOnext started (PID: $(cat "$PID_FILE"))${NONE}"
 fi
 
 echo
-echo -e "Use the ${CYAN}GPIOnext${NONE} system in EmulationStation to control the daemon."
+echo -e "Use the ${CYAN}GPIOnext${NONE} system in EmulationStation to configure and control the daemon."
 echo -e "GPIOnext will start automatically on next boot via ${CYAN}${CUSTOM_SH}${NONE}."

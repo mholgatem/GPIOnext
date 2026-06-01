@@ -94,15 +94,24 @@ jobs:
               sudo apt-get install -y gcc-aarch64-linux-gnu ;;
           esac
 
-      - name: Build config-manager binary
+      - name: Build config-manager and daemon binaries
         env:
           CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER: arm-linux-gnueabihf-gcc
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
         run: |
+          # config-manager (no GPIO/I2C needed)
           cargo build --release -p gpionext-config --target ${{ matrix.target }}
           cp target/${{ matrix.target }}/release/gpionext-config \
              dist/gpionext-config-${{ matrix.arch }}
-          echo "Config manager: $(ls dist/gpionext-config-*)"
+
+          # daemon (GPIO + I2C; same features as the .so)
+          cargo build --release -p gpionext \
+            --target ${{ matrix.target }} \
+            --no-default-features --features gpio,i2c
+          cp target/${{ matrix.target }}/release/gpionext \
+             dist/gpionext-${{ matrix.arch }}
+
+          echo "Dist: $(ls dist/)"
 
       - name: Write VERSION file
         run: echo "${{ steps.version.outputs.VERSION }}" > dist/VERSION
@@ -114,6 +123,7 @@ jobs:
           path: |
             dist/gpionext_core-${{ matrix.arch }}.so
             dist/gpionext-config-${{ matrix.arch }}
+            dist/gpionext-${{ matrix.arch }}
 
       - name: Attach binaries to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
@@ -122,6 +132,7 @@ jobs:
           files: |
             dist/gpionext_core-${{ matrix.arch }}.so
             dist/gpionext-config-${{ matrix.arch }}
+            dist/gpionext-${{ matrix.arch }}
             dist/VERSION
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

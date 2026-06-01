@@ -1,7 +1,10 @@
 /// init_sys.rs — Init system detection and daemon lifecycle control.
 ///
-/// Detects systemd / S6 (Batocera) / OpenRC (Recalbox) / PID-file fallback
-/// at runtime and dispatches start/stop/reload commands to the right tool.
+/// For Stop and Reload, tries the Rust daemon's IPC command socket first
+/// (`/tmp/gpionext-cmd.sock`). If the socket is unavailable (daemon not running
+/// or using the old Python daemon), falls back to the detected init system.
+///
+/// Start always goes through the init system (can't start via an absent socket).
 
 use anyhow::{bail, Result};
 use std::path::Path;
@@ -34,13 +37,76 @@ pub fn detect_init() -> InitSystem {
     }
 }
 
-/// Execute a daemon lifecycle command using the appropriate init system.
+/// Execute a daemon lifecycle command.
+///
+/// For Stop/Reload: tries the IPC command socket first (works with the native
+/// Rust daemon), then falls back to the detected init system.
+/// Start always goes through the init system.
 pub fn run_daemon_cmd(cmd: DaemonCmd) -> Result<()> {
+    match cmd {
+        DaemonCmd::Start => dispatch_init_cmd(cmd),
+        DaemonCmd::Stop | DaemonCmd::Reload => {
+            if try_socket_cmd(cmd).is_ok() {
+                return Ok(());
+            }
+            dispatch_init_cmd(cmd)
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// IPC command socket (Rust daemon only)
+// ---------------------------------------------------------------------------
+
+/// Send a command to the running Rust daemon via the command socket.
+/// Returns `Ok(())` if the daemon acknowledged; `Err` otherwise.
+#[cfg(unix)]
+fn try_socket_cmd(cmd: DaemonCmd) -> Result<()> {
+    use std::io::{BufRead, BufReader, Write};
+    use std::os::unix::net::UnixStream;
+    use std::time::Duration;
+
+    let mut stream = UnixStream::connect("/tmp/gpionext-cmd.sock")?;
+    stream.set_write_timeout(Some(Duration::from_secs(3)))?;
+    stream.set_read_timeout(Some(Duration::from_secs(5)))?;
+
+    let req = match cmd {
+        DaemonCmd::Stop   => r#"{"cmd":"stop"}"#,
+        DaemonCmd::Reload => r#"{"cmd":"reload"}"#,
+        DaemonCmd::Start  => return Err(anyhow::anyhow!("start not supported via socket")),
+    };
+
+    stream.write_all(req.as_bytes())?;
+    stream.write_all(b"\n")?;
+
+    let mut line = String::new();
+    BufReader::new(&stream).read_line(&mut line)?;
+
+    let v: serde_json::Value = serde_json::from_str(line.trim())
+        .unwrap_or(serde_json::Value::Null);
+    if v.get("ok").and_then(|b| b.as_bool()).unwrap_or(false) {
+        Ok(())
+    } else {
+        let msg = v.get("msg").and_then(|m| m.as_str()).unwrap_or("unknown error");
+        bail!("daemon returned error: {msg}")
+    }
+}
+
+#[cfg(not(unix))]
+fn try_socket_cmd(_cmd: DaemonCmd) -> Result<()> {
+    bail!("IPC socket not supported on this platform")
+}
+
+// ---------------------------------------------------------------------------
+// Init system dispatch
+// ---------------------------------------------------------------------------
+
+fn dispatch_init_cmd(cmd: DaemonCmd) -> Result<()> {
     match detect_init() {
         InitSystem::Systemd => systemd_cmd(cmd),
         InitSystem::S6 => s6_cmd(cmd),
         InitSystem::OpenRC => openrc_cmd(cmd),
-        InitSystem::PidFile => pidflie_cmd(cmd),
+        InitSystem::PidFile => pidfile_cmd(cmd),
     }
 }
 
@@ -59,7 +125,6 @@ fn s6_cmd(cmd: DaemonCmd) -> Result<()> {
         DaemonCmd::Stop => "-d",
         DaemonCmd::Reload => "-h",
     };
-    // Try s6-svc first, fall back to s6-rc
     let svc_dir = "/run/service/gpionext";
     if Path::new(svc_dir).exists() {
         run(&["s6-svc", arg, svc_dir])
@@ -79,7 +144,6 @@ fn openrc_cmd(cmd: DaemonCmd) -> Result<()> {
         DaemonCmd::Stop => "stop",
         DaemonCmd::Reload => "reload",
     };
-    // Try /etc/init.d script first, then service command
     let init_script = "/etc/init.d/gpionext";
     if Path::new(init_script).exists() {
         run(&[init_script, arg])
@@ -88,12 +152,10 @@ fn openrc_cmd(cmd: DaemonCmd) -> Result<()> {
     }
 }
 
-fn pidflie_cmd(cmd: DaemonCmd) -> Result<()> {
+fn pidfile_cmd(cmd: DaemonCmd) -> Result<()> {
     let pid_path = "/run/gpionext.pid";
     match cmd {
-        DaemonCmd::Start => {
-            run(&["/usr/bin/gpionext", "start"])
-        }
+        DaemonCmd::Start => run(&["/usr/bin/gpionext", "start"]),
         DaemonCmd::Stop => {
             let pid = read_pid(pid_path)?;
             send_signal(pid, libc_sigterm())
@@ -128,11 +190,11 @@ fn send_signal(pid: u32, sig: i32) -> Result<()> {
 #[cfg(unix)]
 fn libc_sigterm() -> i32 { libc::SIGTERM }
 #[cfg(unix)]
-fn libc_sighup() -> i32  { libc::SIGHUP  }
+fn libc_sighup()  -> i32 { libc::SIGHUP }
 #[cfg(not(unix))]
 fn libc_sigterm() -> i32 { 15 }
 #[cfg(not(unix))]
-fn libc_sighup() -> i32  { 1 }
+fn libc_sighup()  -> i32 { 1 }
 
 fn run(argv: &[&str]) -> Result<()> {
     let status = Command::new(argv[0]).args(&argv[1..]).status()?;

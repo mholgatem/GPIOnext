@@ -214,9 +214,16 @@ curl -fL "${RELEASE_BASE}/gpionext-config-${ARCH}" \
     && chmod +x "${INSTALL_PATH}/bin/gpionext-config" \
     || echo -e "${FUSCHIA}Warning: could not download gpionext-config binary.${NONE}"
 
-# Install config manager to /usr/local/bin so it's in PATH everywhere
+# Symlink config manager into PATH if a writable bin directory exists.
+# /usr/local/bin doesn't exist on Recalbox/Batocera — skip silently there.
 if [ -f "${INSTALL_PATH}/bin/gpionext-config" ]; then
-    install -m 755 "${INSTALL_PATH}/bin/gpionext-config" /usr/local/bin/gpionext-config
+    for BINDIR in /usr/local/bin /usr/bin; do
+        if [ -d "$BINDIR" ] && [ -w "$BINDIR" ]; then
+            install -m 755 "${INSTALL_PATH}/bin/gpionext-config" "${BINDIR}/gpionext-config" \
+                && echo -e "${GREEN}gpionext-config installed to ${BINDIR}${NONE}" \
+                && break
+        fi
+    done
 fi
 
 # ---------------------------------------------------------------------------

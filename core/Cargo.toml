@@ -11,8 +11,9 @@ name = "gpionext_core"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-# PyO3: Python↔Rust bridge. extension-module feature required for .so builds.
-pyo3 = { version = "0.23", features = ["extension-module", "abi3-py37"] }
+# PyO3: optional — only compiled when building the Python extension (.so).
+# Disabled for the native Rust daemon (--no-default-features).
+pyo3 = { version = "0.23", features = ["extension-module", "abi3-py37"], optional = true }
 
 # Rayon: fixed-size thread pool for combo resolution (replaces unbounded threading.Timer).
 rayon = "1.9"
@@ -37,10 +38,14 @@ i2cdev = { version = "0.6", optional = true }
 libc = "0.2"
 
 [features]
-default = []
-# gpio: enables the gpiocdev event loop (Phase 2)
+# python: builds the PyO3 extension module (.so loaded by Python). Default on so that
+# `cargo build -p gpionext-core` still produces a Python-compatible library.
+# Disable with --no-default-features when building the native Rust daemon.
+default = ["python"]
+python = ["dep:pyo3"]
+# gpio: enables the gpiocdev event loop
 gpio = ["dep:gpiocdev"]
-# i2c: enables MCP23017 + ADS1115 + PCF8574 drivers (Phase 3)
+# i2c: enables MCP23017 + ADS1115 + PCF8574 drivers
 i2c = ["dep:i2cdev", "gpio"]
 
 [profile.release]
