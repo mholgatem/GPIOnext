@@ -1,4 +1,4 @@
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -65,12 +65,19 @@ impl PinCaptureModal {
                 let (modal, action) = (self.on_capture)(Some(pins), cfg);
                 (modal, action, false)
             }
-            // Handle all backspace variants
-            KeyCode::Backspace | KeyCode::Char('\x08') | KeyCode::Char('\x7f') => {
+            // Backspace variants
+            KeyCode::Backspace | KeyCode::Char('\x7f') | KeyCode::Char('\x08') => {
                 self.input.pop();
                 (Some(Modal::PinCapture(self)), None, false)
             }
-            KeyCode::Char(c) if c.is_ascii_digit() || c == ',' || c == ' ' => {
+            // Ctrl+H = backspace in many terminals
+            KeyCode::Char('h') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.input.pop();
+                (Some(Modal::PinCapture(self)), None, false)
+            }
+            KeyCode::Char(c) if (c.is_ascii_digit() || c == ',' || c == ' ')
+                && !key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
                 self.input.push(c);
                 (Some(Modal::PinCapture(self)), None, false)
             }

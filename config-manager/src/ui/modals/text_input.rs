@@ -1,4 +1,4 @@
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::Style,
@@ -48,12 +48,18 @@ impl TextInputModal {
                 let (modal, action) = (self.on_confirm)(val, cfg);
                 (modal, action, false)
             }
-            // Handle all backspace variants: DEL key, Ctrl+H (\x08), \x7f
-            KeyCode::Backspace | KeyCode::Char('\x08') | KeyCode::Char('\x7f') => {
+            // Backspace variants: physical key, \x7f (DEL-as-backspace), \x08 literal
+            KeyCode::Backspace | KeyCode::Char('\x7f') | KeyCode::Char('\x08') => {
                 self.value.pop();
                 (Some(Modal::TextInput(self)), None, false)
             }
-            KeyCode::Char(c) => {
+            // Ctrl+H = backspace in many terminal emulators (crossterm decodes as Char('h') + CONTROL)
+            KeyCode::Char('h') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.value.pop();
+                (Some(Modal::TextInput(self)), None, false)
+            }
+            // Normal printable character — ignore any Ctrl-modified input
+            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.value.push(c);
                 (Some(Modal::TextInput(self)), None, false)
             }

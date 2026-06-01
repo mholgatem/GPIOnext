@@ -5,7 +5,7 @@
 ///   [F2] I2C Chips        — ↑↓ move, n add, d delete
 ///   [F3] Live Pin Monitor — ↑↓ scroll through all pins
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
@@ -80,11 +80,17 @@ impl I2cSettingsTab {
                     self.commit_edit(cfg);
                     self.editing = false;
                 }
-                // All backspace variants
-                KeyCode::Backspace | KeyCode::Char('\x08') | KeyCode::Char('\x7f') => {
+                // Backspace variants
+                KeyCode::Backspace | KeyCode::Char('\x7f') | KeyCode::Char('\x08') => {
                     self.edit_buf.pop();
                 }
-                KeyCode::Char(c) => { self.edit_buf.push(c); }
+                // Ctrl+H = backspace in many terminals
+                KeyCode::Char('h') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.edit_buf.pop();
+                }
+                KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.edit_buf.push(c);
+                }
                 _ => {}
             }
         } else {

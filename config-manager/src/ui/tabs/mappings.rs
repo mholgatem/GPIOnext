@@ -66,8 +66,8 @@ impl MappingsTab {
                 None
             }
 
-            // f / c: open filter modal (All + each device)
-            KeyCode::Char('f') | KeyCode::Char('F') | KeyCode::Char('c') | KeyCode::Char('C') => {
+            // f: open filter modal (All + each device)
+            KeyCode::Char('f') | KeyCode::Char('F') => {
                 let mut items = vec!["All".to_owned()];
                 items.extend(DEVICE_LIST.iter().map(|&s| s.to_owned()));
                 Some(Modal::SingleSelect(SingleSelectModal::new(
@@ -86,8 +86,8 @@ impl MappingsTab {
                 )))
             }
 
-            // n: add mapping. If filtered, go straight to wizard; otherwise pick device first.
-            KeyCode::Char('n') | KeyCode::Char('N') => {
+            // a: add mapping. If filtered, go straight to wizard; otherwise pick device first.
+            KeyCode::Char('a') | KeyCode::Char('A') => {
                 if let Some(ref device) = self.filter_device.clone() {
                     launch_add_wizard(device.clone())
                 } else {
@@ -152,9 +152,9 @@ impl MappingsTab {
 
         // Banner / header
         let banner = if let Some(ref d) = self.filter_device {
-            format!(" Device: {d}  [n] Add  [d] Delete  [f] Filter  [c] Change ")
+            format!(" Device: {d}  [a] Add  [d] Delete  [f] Filter ")
         } else {
-            " All Devices  [n] Add  [d] Delete  [f] Filter by device ".to_owned()
+            " All Devices  [a] Add  [d] Delete  [f] Filter by device ".to_owned()
         };
         f.render_widget(
             Paragraph::new(Line::from(banner.as_str()))
@@ -315,7 +315,7 @@ impl MappingsTab {
 
 impl TabHint for MappingsTab {
     fn hint(&self) -> &str {
-        "↑↓/jk: move  n: add  d: delete  f/c: filter device  s: save  q: quit"
+        "↑↓/jk: move  a: add  d: delete  f: filter device  s: save  q: quit"
     }
 }
 

@@ -193,13 +193,26 @@ modprobe i2c-dev 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
 # I2C boot configuration
-# Recalbox's /boot is a FAT partition — mount it if not already mounted.
-# Adds dtparam=i2c_arm=on and dtparam=i2c1=on if not already present.
+# Recalbox uses /boot/recalbox-user-config.txt for user dtparam overrides.
+# /boot is a FAT partition mounted read-only; remount rw to write, then
+# restore ro so Recalbox's own mount management is not disrupted.
 # ---------------------------------------------------------------------------
 
 enable_i2c_boot_config() {
     local BOOT_CFG="$1"
+    local REMOUNTED=false
     local CHANGED=false
+
+    # Remount /boot read-write if needed
+    if ! mount | grep -q ' /boot ' 2>/dev/null; then
+        mount /boot 2>/dev/null || true
+    fi
+    if mount | grep '/boot' | grep -q 'ro[,)]'; then
+        mount -o remount,rw /boot 2>/dev/null && REMOUNTED=true
+    fi
+
+    # Create the file if it doesn't exist yet
+    [ -f "$BOOT_CFG" ] || touch "$BOOT_CFG"
 
     if ! grep -q 'dtparam=i2c_arm=on' "$BOOT_CFG" 2>/dev/null; then
         echo 'dtparam=i2c_arm=on' >> "$BOOT_CFG"
@@ -210,6 +223,11 @@ enable_i2c_boot_config() {
         CHANGED=true
     fi
 
+    # Restore read-only
+    if $REMOUNTED; then
+        mount -o remount,ro /boot 2>/dev/null || true
+    fi
+
     if $CHANGED; then
         echo -e "${GREEN}I2C dtparam lines added to ${BOOT_CFG} — reboot required for I2C to work.${NONE}"
     else
@@ -217,14 +235,15 @@ enable_i2c_boot_config() {
     fi
 }
 
-# Try /boot/config.txt (mounted) or /boot/firmware/config.txt (Pi 5 Bookworm)
-if [ -f /boot/config.txt ]; then
-    enable_i2c_boot_config /boot/config.txt
+# Recalbox user config is the correct place for dtparam overrides.
+# Fall back to standard config.txt paths for non-Recalbox systems.
+if [ -f /boot/recalbox-user-config.txt ] || mount | grep -q '/boot'; then
+    enable_i2c_boot_config /boot/recalbox-user-config.txt
 elif [ -f /boot/firmware/config.txt ]; then
     enable_i2c_boot_config /boot/firmware/config.txt
 else
-    echo -e "${FUSCHIA}NOTE: /boot/config.txt not found.${NONE}"
-    echo "  To enable I2C, mount /boot and add:"
+    echo -e "${FUSCHIA}NOTE: Could not locate boot config.${NONE}"
+    echo "  To enable I2C manually, add to /boot/recalbox-user-config.txt:"
     echo "    dtparam=i2c_arm=on"
     echo "    dtparam=i2c1=on"
 fi

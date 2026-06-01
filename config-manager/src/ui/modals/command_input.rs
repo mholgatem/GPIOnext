@@ -1,4 +1,4 @@
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::Style,
@@ -63,15 +63,23 @@ impl CommandInputModal {
                     (modal, action, false)
                 }
             }
-            // Handle all backspace variants
-            KeyCode::Backspace | KeyCode::Char('\x08') | KeyCode::Char('\x7f') => {
+            // Backspace variants
+            KeyCode::Backspace | KeyCode::Char('\x7f') | KeyCode::Char('\x08') => {
                 match self.active_field {
                     Field::Command => { self.command.pop(); }
                     Field::Timeout => { self.timeout.pop(); }
                 }
                 (Some(Modal::CommandInput(self)), None, false)
             }
-            KeyCode::Char(c) => {
+            // Ctrl+H = backspace in many terminals
+            KeyCode::Char('h') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                match self.active_field {
+                    Field::Command => { self.command.pop(); }
+                    Field::Timeout => { self.timeout.pop(); }
+                }
+                (Some(Modal::CommandInput(self)), None, false)
+            }
+            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 match self.active_field {
                     Field::Command => self.command.push(c),
                     Field::Timeout => {

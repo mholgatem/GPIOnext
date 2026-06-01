@@ -1,4 +1,4 @@
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
@@ -106,11 +106,15 @@ impl AddI2cModal {
                     _ => unreachable!(),
                 };
                 match key.code {
-                    KeyCode::Backspace | KeyCode::Char('\x08') | KeyCode::Char('\x7f') => {
+                    KeyCode::Backspace | KeyCode::Char('\x7f') | KeyCode::Char('\x08') => {
                         field.pop();
                         (Some(Modal::AddI2c(self)), None, false)
                     }
-                    KeyCode::Char(c) => {
+                    KeyCode::Char('h') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        field.pop();
+                        (Some(Modal::AddI2c(self)), None, false)
+                    }
+                    KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                         field.push(c);
                         (Some(Modal::AddI2c(self)), None, false)
                     }

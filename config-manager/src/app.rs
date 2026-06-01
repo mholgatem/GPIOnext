@@ -153,13 +153,8 @@ impl App {
                 }
             }
 
-            // ── Devices tab: Enter or n both navigate to Mappings ─────────────
+            // ── Devices tab: Enter navigates to Mappings for the selected device ─
             KeyCode::Enter if self.tab == TabIndex::Devices => {
-                let device = DEVICE_LIST[self.devices_tab.selected].to_owned();
-                self.mappings_tab.set_filter(Some(device));
-                self.tab = TabIndex::Mappings;
-            }
-            KeyCode::Char('n') | KeyCode::Char('N') if self.tab == TabIndex::Devices => {
                 let device = DEVICE_LIST[self.devices_tab.selected].to_owned();
                 self.mappings_tab.set_filter(Some(device));
                 self.tab = TabIndex::Mappings;
