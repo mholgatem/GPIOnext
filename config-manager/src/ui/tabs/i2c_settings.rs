@@ -277,7 +277,7 @@ impl I2cSettingsTab {
         )
         .block(
             Block::default()
-                .title(" Settings [F1]  [↑↓] move  [Enter] edit  [Space] toggle ")
+                .title(" Settings [F1] ")
                 .borders(Borders::ALL)
                 .border_style(if focused { theme::border_focused() } else { theme::border_normal() }),
         );
@@ -307,7 +307,7 @@ impl I2cSettingsTab {
         .header(header)
         .block(
             Block::default()
-                .title(" I2C Chips [F2]  [n] Add  [d] Delete ")
+                .title(" I2C Chips [F2] ")
                 .borders(Borders::ALL)
                 .border_style(if focused { theme::border_focused() } else { theme::border_normal() }),
         )

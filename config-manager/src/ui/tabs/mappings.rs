@@ -152,9 +152,9 @@ impl MappingsTab {
 
         // Banner / header
         let banner = if let Some(ref d) = self.filter_device {
-            format!(" Device: {d}  [a] Add  [d] Delete  [f] Filter ")
+            format!(" Device: {d} ")
         } else {
-            " All Devices  [a] Add  [d] Delete  [f] Filter by device ".to_owned()
+            " All Devices ".to_owned()
         };
         f.render_widget(
             Paragraph::new(Line::from(banner.as_str()))

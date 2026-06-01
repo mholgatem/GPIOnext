@@ -216,7 +216,7 @@ impl PresetsConfigTab {
         let list = List::new(items)
             .block(
                 Block::default()
-                    .title(" HAT Presets [F1]  [↑↓] select  [Enter] load ")
+                    .title(" HAT Presets [F1] ")
                     .borders(Borders::ALL)
                     .border_style(if focused { theme::border_focused() } else { theme::border_normal() }),
             )
@@ -229,7 +229,7 @@ impl PresetsConfigTab {
     fn render_daemon_control(&self, f: &mut Frame, area: Rect) {
         let focused = self.focus == Focus::DaemonControl;
         let block = Block::default()
-            .title(" Daemon Control [F2]  [←→/hl] select  [Enter] run ")
+            .title(" Daemon Control [F2] ")
             .borders(Borders::ALL)
             .border_style(if focused { theme::border_focused() } else { theme::border_normal() });
 
@@ -265,7 +265,7 @@ impl PresetsConfigTab {
     fn render_export_import(&self, f: &mut Frame, area: Rect) {
         let focused = self.focus == Focus::ExportImport;
         let block = Block::default()
-            .title(" Export / Import [F3]  [←→/hl] select  [Enter] open dialog ")
+            .title(" Export / Import [F3] ")
             .borders(Borders::ALL)
             .border_style(if focused { theme::border_focused() } else { theme::border_normal() });
 

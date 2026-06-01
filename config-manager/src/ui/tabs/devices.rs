@@ -75,7 +75,7 @@ impl DevicesTab {
         let counts = build_count_map(cfg);
 
         let outer_block = Block::default()
-            .title(" GPIOnext Devices  [←→↑↓/hjkl] navigate  [Enter] edit mappings  [d] delete  [s] save ")
+            .title(" Devices ")
             .borders(Borders::ALL)
             .border_style(theme::border_normal());
         let inner_area = outer_block.inner(area);

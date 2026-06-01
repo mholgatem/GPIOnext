@@ -104,7 +104,7 @@ pub fn render(
 
     // Build title with F3 label
     let title = Line::from(vec![
-        Span::raw(" Live Pin Monitor [F3]  [↑↓] scroll  "),
+        Span::raw(" Live Pin Monitor [F3]  "),
         Span::styled(conn_indicator, conn_style),
     ]);
 

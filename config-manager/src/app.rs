@@ -240,8 +240,8 @@ impl App {
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .border_style(theme::border_normal())
-                    .title(Span::styled(" GPIOnext Config ", theme::tab_active())),
+                    .border_style(theme::tab_border())
+                    .title(Span::styled(" GPIOnext Config ", theme::border_normal())),
             )
             .select(self.tab as usize)
             .highlight_style(theme::tab_active())
@@ -268,7 +268,7 @@ impl App {
                 (msg.as_str(), theme::status_ok())
             }
         } else {
-            (self.tab_hint(), theme::hint_text())
+            (self.tab_hint(), theme::footer_hint())
         };
 
         let para = Paragraph::new(Line::from(Span::styled(
