@@ -1,29 +1,21 @@
+pub mod live_pin_view;
 pub mod modals;
 pub mod tabs;
-pub mod live_pin_view;
-
-use crossterm::event::KeyEvent;
-use ratatui::{layout::Rect, Frame};
-use std::sync::{Arc, Mutex};
-
-use crate::{
-    config::GpioConfig,
-    ipc_client::PinState,
-    init_sys::DaemonCmd,
-};
 
 pub use modals::Modal;
+
+use crate::init_sys::DaemonCmd;
 
 /// Actions a modal can return to the App after it closes.
 #[derive(Debug)]
 pub enum ModalAction {
-    /// Persist the current config to disk immediately.
+    /// Persist config to disk.
     Save,
-    /// Display a transient status message in the bottom bar.
+    /// Show a transient message in the status bar.
     StatusMsg(String),
-    /// Rebuild the Devices tab from the updated config.
+    /// Rebuild the Devices tab row list.
     RefreshDevicesTab,
-    /// Rebuild the Mappings tab for the given device.
+    /// Load `device` in the Mappings tab and switch to it.
     RefreshMappingsTab(String),
     /// Send a lifecycle command to the daemon.
     DaemonAction(DaemonCmd),

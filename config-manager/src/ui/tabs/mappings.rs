@@ -5,7 +5,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::Line,
+    text::{Line, Span},
     widgets::{Block, Borders, Cell, Paragraph, Row, Table, TableState},
     Frame,
 };
@@ -14,13 +14,14 @@ use crate::{
     config::{self, DeviceRow, GpioConfig},
     constants::{BUTTON_LIST, COMMAND_PRESETS, DEVICE_LIST, KEY_LIST},
     ui::{
-        Modal, ModalAction,
         modals::{
             command_input::CommandInputModal,
             confirm::ConfirmModal,
             pin_capture::PinCaptureModal,
-            selection::{MultiSelectModal, SingleSelectModal},
+            selection::SingleSelectModal,
+            Modal,
         },
+        ModalAction,
     },
 };
 
@@ -64,8 +65,8 @@ impl MappingsTab {
                 None
             }
 
-            // Select device first if none selected
-            KeyCode::Tab if self.selected_device.is_none() => {
+            // 'c' = change/choose device (Tab is consumed globally for tab switching)
+            KeyCode::Char('c') | KeyCode::Char('C') => {
                 let devices: Vec<String> = DEVICE_LIST.iter().map(|&s| s.to_owned()).collect();
                 Some(Modal::SingleSelect(SingleSelectModal::new(
                     "Select Device",
@@ -120,9 +121,9 @@ impl MappingsTab {
 
         // Device selector banner
         let banner = if let Some(ref d) = self.selected_device {
-            format!(" Device: {d}  [n] Add  [d] Delete  [Tab] Switch device ")
+            format!(" Device: {d}  [n] Add mapping  [d] Delete  [c] Change device ")
         } else {
-            " No device selected — press Tab to choose ".to_owned()
+            " No device selected ".to_owned()
         };
         f.render_widget(
             Paragraph::new(Line::from(banner.as_str()))
@@ -135,7 +136,17 @@ impl MappingsTab {
             Some(d) => d.clone(),
             None => {
                 f.render_widget(
-                    Paragraph::new("Press [Tab] to select a device."),
+                    Paragraph::new(vec![
+                        Line::from(""),
+                        Line::from(Span::styled(
+                            "  Press [n] on the Devices tab and select a device,",
+                            Style::default().fg(Color::DarkGray),
+                        )),
+                        Line::from(Span::styled(
+                            "  or press [c] here to choose a device directly.",
+                            Style::default().fg(Color::DarkGray),
+                        )),
+                    ]),
                     chunks[1],
                 );
                 return;
@@ -143,6 +154,25 @@ impl MappingsTab {
         };
 
         let rows_data = config::get_device_rows(cfg, &device);
+
+        if rows_data.is_empty() {
+            f.render_widget(
+                Paragraph::new(vec![
+                    Line::from(""),
+                    Line::from(Span::styled(
+                        format!("  No mappings for {device} yet."),
+                        Style::default().fg(Color::DarkGray),
+                    )),
+                    Line::from(Span::styled(
+                        "  Press [n] to add a mapping.",
+                        Style::default().fg(Color::Yellow),
+                    )),
+                ])
+                .block(Block::default().borders(Borders::ALL).title(" Mappings ")),
+                chunks[1],
+            );
+            return;
+        }
 
         let header = Row::new(vec![
             Cell::from("Name").style(Style::default().add_modifier(Modifier::BOLD)),

@@ -14,11 +14,12 @@ use crate::{
     config::{Ads1115Entry, GpioConfig, Mcp23017Entry, Pcf8574Entry},
     ipc_client::PinState,
     ui::{
-        Modal, ModalAction,
         modals::{
             add_i2c::{AddI2cModal, ChipType, I2cEntry},
             confirm::ConfirmModal,
+            Modal,
         },
+        ModalAction,
     },
 };
 use super::super::live_pin_view;

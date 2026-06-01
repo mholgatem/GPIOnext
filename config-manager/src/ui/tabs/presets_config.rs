@@ -14,12 +14,13 @@ use crate::{
     init_sys::DaemonCmd,
     presets,
     ui::{
-        Modal, ModalAction,
         modals::{
             confirm::ConfirmModal,
             selection::SingleSelectModal,
             text_input::TextInputModal,
+            Modal,
         },
+        ModalAction,
     },
 };
 

@@ -5,8 +5,8 @@ use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::{Constraint, Rect},
     style::{Color, Modifier, Style},
-    text::Line,
-    widgets::{Block, Borders, Cell, Row, Table, TableState},
+    text::{Line, Span},
+    widgets::{Block, Borders, Cell, Paragraph, Row, Table, TableState},
     Frame,
 };
 
@@ -14,11 +14,8 @@ use crate::{
     config::{self, GpioConfig},
     constants::DEVICE_LIST,
     ui::{
-        Modal, ModalAction,
-        modals::{
-            confirm::ConfirmModal,
-            selection::SingleSelectModal,
-        },
+        modals::{confirm::ConfirmModal, selection::SingleSelectModal, Modal},
+        ModalAction,
     },
 };
 
@@ -55,28 +52,19 @@ impl DevicesTab {
                 None
             }
 
-            // Add new device: pick from DEVICE_LIST items that have no mappings yet
+            // Add new device: pick any slot and navigate to Mappings to add pins.
             KeyCode::Char('n') | KeyCode::Char('N') => {
-                let active: std::collections::HashSet<String> =
-                    config::active_devices(cfg).into_iter().collect();
-                let available: Vec<String> = DEVICE_LIST
-                    .iter()
-                    .filter(|&&d| !active.contains(d))
-                    .map(|&d| d.to_owned())
-                    .collect();
-
-                if available.is_empty() {
-                    return None; // all devices already configured
-                }
-
+                // Show all devices, including those already configured — user may
+                // want to add more mappings to an existing device.
+                let items: Vec<String> = DEVICE_LIST.iter().map(|&d| d.to_owned()).collect();
                 Some(Modal::SingleSelect(SingleSelectModal::new(
-                    "Select Device to Add",
-                    available,
+                    "Select Device",
+                    items,
                     |idx, _cfg| {
-                        // The caller (app.rs apply_modal_action) will switch to
-                        // Mappings tab; for now just return a refresh action.
-                        if idx.is_some() {
-                            (None, Some(ModalAction::RefreshDevicesTab))
+                        if let Some(i) = idx {
+                            let device = crate::constants::DEVICE_LIST[i].to_owned();
+                            // Switch to Mappings tab with this device loaded.
+                            (None, Some(ModalAction::RefreshMappingsTab(device)))
                         } else {
                             (None, None)
                         }
@@ -114,8 +102,39 @@ impl DevicesTab {
     }
 
     pub fn render(&mut self, f: &mut Frame, area: Rect, cfg: &GpioConfig) {
-        // Refresh row data on every render (cheap Vec scan)
         self.rows = build_rows(cfg);
+
+        // Preserve cursor after config changes
+        if self.rows.is_empty() {
+            self.state.select(None);
+        } else if self.state.selected().is_none() {
+            self.state.select(Some(0));
+        }
+
+        let block = Block::default()
+            .title(" Devices  [n] Go to device  [d] Delete all  [Enter] Edit mappings ")
+            .borders(Borders::ALL);
+
+        if self.rows.is_empty() {
+            let hint = ratatui::widgets::Paragraph::new(vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    "  No devices configured yet.",
+                    Style::default().fg(Color::DarkGray),
+                )),
+                Line::from(Span::styled(
+                    "  Press [n] to choose a device and start adding mappings.",
+                    Style::default().fg(Color::DarkGray),
+                )),
+                Line::from(Span::styled(
+                    "  Or go to Presets & Config to load a HAT preset.",
+                    Style::default().fg(Color::DarkGray),
+                )),
+            ])
+            .block(block);
+            f.render_widget(hint, area);
+            return;
+        }
 
         let header = Row::new(vec![
             Cell::from("Device").style(Style::default().add_modifier(Modifier::BOLD)),
@@ -134,22 +153,11 @@ impl DevicesTab {
             })
             .collect();
 
-        let table = Table::new(
-            rows,
-            [Constraint::Percentage(70), Constraint::Percentage(30)],
-        )
-        .header(header)
-        .block(
-            Block::default()
-                .title(" Devices  [n] Add  [d] Delete  [Enter] Edit mappings ")
-                .borders(Borders::ALL),
-        )
-        .highlight_style(
-            Style::default()
-                .bg(Color::DarkGray)
-                .add_modifier(Modifier::BOLD),
-        )
-        .highlight_symbol("▶ ");
+        let table = Table::new(rows, [Constraint::Percentage(70), Constraint::Percentage(30)])
+            .header(header)
+            .block(block)
+            .highlight_style(Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD))
+            .highlight_symbol("▶ ");
 
         f.render_stateful_widget(table, area, &mut self.state);
     }
