@@ -90,16 +90,16 @@ impl MappingsTab {
             // Delete selected mapping
             KeyCode::Char('d') | KeyCode::Delete => {
                 let device = self.selected_device.as_ref()?;
-                let rows = config::get_device_rows(cfg, device);
                 let i = self.state.selected()?;
-                let row = rows.get(i)?.clone();
+                // Clone the strings we need before dropping the borrow on cfg.
+                let name = config::get_device_rows(cfg, device).get(i)?.name.clone();
                 let device = device.clone();
                 Some(Modal::Confirm(ConfirmModal::new(
                     "Delete Mapping",
-                    format!("Delete '{}' from {device}?", row.name),
+                    format!("Delete '{name}' from {device}?"),
                     move |yes, cfg| {
                         if yes {
-                            config::delete_mapping(cfg, &device, &row.name);
+                            config::delete_mapping(cfg, &device, &name);
                             (None, Some(ModalAction::Save))
                         } else {
                             (None, None)
