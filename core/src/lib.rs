@@ -21,6 +21,7 @@ use std::sync::Arc;
 mod bitmask;
 mod gpio;
 mod i2c;
+mod ipc;
 mod uinput;
 
 use bitmask::{build_config, init_pool, set_config, set_config_arc, EventType, Peripheral};
@@ -251,6 +252,10 @@ impl GpioCore {
                 }
             }
         }
+
+        // Start IPC server so gpionext-config can read live pin states
+        #[cfg(unix)]
+        ipc::start_ipc_server(Arc::clone(&self.running));
 
         Ok(())
     }

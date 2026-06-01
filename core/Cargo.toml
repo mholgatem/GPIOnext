@@ -20,6 +20,10 @@ rayon = "1.9"
 # parking_lot: faster Mutex/RwLock than std, important on low-power Pi 2B.
 parking_lot = "0.12"
 
+# serde_json: serialize pin state frames for the IPC socket (gpionext-config live view).
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
 # C deps for GPIO and i2c — gated behind features so Phase 1 CI builds without them.
 # Enabled in Phase 2 once cross-compilation sysroots are confirmed.
 [target.'cfg(target_os = "linux")'.dependencies]

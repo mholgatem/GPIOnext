@@ -1,16 +1,18 @@
 #!/bin/bash
 # GPIOnext Setup Script — Recalbox
 #
-# Installs GPIOnext to /recalbox/share/system/gpionext with a Python virtualenv
-# and a pre-built Rust extension binary fetched from GitHub Releases.
+# Installs GPIOnext to /recalbox/share/system/gpionext.
 #
 # Recalbox uses a read-only root filesystem; /recalbox/share is the writable
 # user data partition. systemd is not available; startup is handled by
 # injecting a block into /recalbox/share/system/custom.sh.
-# /usr/bin is read-only; commands are invoked directly from the install path.
 #
-# Usage: bash setup/recalbox/setup.sh [--noaptupdate] [--update-core]
-#   --noaptupdate   Skip apt-get update
+# NOTE: /recalbox/share does NOT support symlinks (FAT32 or similar).
+# Python venv is therefore unusable here. Dependencies are installed via
+# pip --target into pylib/ and PYTHONPATH is set at runtime. All ln -sf
+# calls are replaced with cp.
+#
+# Usage: bash setup/recalbox/setup.sh [--update-core]
 #   --update-core   Only refresh the Rust binary from GitHub
 
 set -euo pipefail
@@ -20,6 +22,7 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 
 INSTALL_PATH="/recalbox/share/system/gpionext"
+PYLIB="${INSTALL_PATH}/pylib"
 GITHUB_REPO="mholgatem/GPIOnext"
 PID_FILE="/run/gpionext.pid"
 CUSTOM_SH="/recalbox/share/system/custom.sh"
@@ -62,6 +65,29 @@ SCRIPTPATH=$(dirname "$SCRIPT")
 REPOPATH=$(dirname "$(dirname "$SCRIPTPATH")")
 
 # ---------------------------------------------------------------------------
+# Pip detection helper
+# Sets PIP_CMD to the first usable pip invocation, or empty string.
+# ---------------------------------------------------------------------------
+find_pip() {
+    if python3 -m pip --version &>/dev/null 2>&1; then
+        PIP_CMD="python3 -m pip"
+    elif command -v pip3 &>/dev/null; then
+        PIP_CMD="pip3"
+    elif command -v pip &>/dev/null; then
+        PIP_CMD="pip"
+    else
+        echo -e "${CYAN}pip not found — attempting ensurepip bootstrap...${NONE}"
+        python3 -m ensurepip --upgrade 2>/dev/null || true
+        if python3 -m pip --version &>/dev/null 2>&1; then
+            PIP_CMD="python3 -m pip"
+        else
+            PIP_CMD=""
+            echo -e "${RED}pip unavailable. Python packages must be installed manually.${NONE}"
+        fi
+    fi
+}
+
+# ---------------------------------------------------------------------------
 # Architecture detection
 # ---------------------------------------------------------------------------
 
@@ -89,7 +115,7 @@ if $ONLY_UPDATE_CORE; then
     echo -e "${CYAN}${BOLD}Updating Rust extension binary only...${NONE}"
 
     BINARY_NAME="gpionext_core-${RUST_ARCH}.so"
-    DEST="${INSTALL_PATH}/${BINARY_NAME}"
+    DEST="${INSTALL_PATH}/gpionext_core.so"
 
     LATEST_TAG=$(curl -sf "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" \
         | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/') || LATEST_TAG=""
@@ -106,15 +132,12 @@ if $ONLY_UPDATE_CORE; then
     BINARY_URL="https://github.com/${GITHUB_REPO}/releases/download/${LATEST_TAG}/${BINARY_NAME}"
     echo "Downloading $BINARY_URL..."
     if curl -sfL "$BINARY_URL" -o "$DEST"; then
-        chmod 755 "$DEST"
-        ln -sf "$DEST" "${INSTALL_PATH}/gpionext_core.so"
         curl -sfL "https://github.com/${GITHUB_REPO}/releases/download/${LATEST_TAG}/VERSION" \
             -o "${INSTALL_PATH}/VERSION" 2>/dev/null || true
         echo -e "${GREEN}Binary updated to ${LATEST_TAG}.${NONE}"
-        # Restart daemon if running
         if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
             kill "$(cat "$PID_FILE")" && rm -f "$PID_FILE"
-            "${INSTALL_PATH}/venv/bin/python3" -u \
+            PYTHONPATH="$PYLIB" python3 -u \
                 "${INSTALL_PATH}/python/gpionext.py" --debounce 1 --combo_delay 50 &
             echo $! > "$PID_FILE"
         fi
@@ -131,30 +154,33 @@ fi
 
 echo -e "${CYAN}${UNDERLINE}Setting up directory structure at ${INSTALL_PATH}...${NONE}"
 mkdir -p "${INSTALL_PATH}/config"
+mkdir -p "$PYLIB"
 echo "recalbox" > "${INSTALL_PATH}/PLATFORM"
 
 # ---------------------------------------------------------------------------
-# Python virtualenv
+# Python dependencies (no venv — filesystem does not support symlinks)
 # ---------------------------------------------------------------------------
 
-echo -e "${CYAN}${UNDERLINE}Creating Python virtualenv...${NONE}"
-python3 -m venv "${INSTALL_PATH}/venv"
-"${INSTALL_PATH}/venv/bin/pip" install --quiet --upgrade pip
-
-if [ -f "${REPOPATH}/requirements.txt" ]; then
-    "${INSTALL_PATH}/venv/bin/pip" install --quiet -r "${REPOPATH}/requirements.txt"
-else
-    echo -e "${RED}Warning: requirements.txt not found. Skipping pip install.${NONE}"
+echo -e "${CYAN}${UNDERLINE}Installing Python dependencies...${NONE}"
+find_pip
+if [ -n "${PIP_CMD:-}" ]; then
+    if [ -f "${REPOPATH}/requirements.txt" ]; then
+        $PIP_CMD install --quiet --target "$PYLIB" -r "${REPOPATH}/requirements.txt"
+        echo -e "${GREEN}Python packages installed to ${PYLIB}${NONE}"
+    else
+        echo -e "${RED}Warning: requirements.txt not found. Skipping pip install.${NONE}"
+    fi
 fi
 
 # ---------------------------------------------------------------------------
 # Rust extension binary
+# Download directly as gpionext_core.so — no symlink needed or possible.
 # ---------------------------------------------------------------------------
 
 echo -e "${CYAN}${UNDERLINE}Downloading Rust extension binary...${NONE}"
 
 BINARY_NAME="gpionext_core-${RUST_ARCH}.so"
-DEST="${INSTALL_PATH}/${BINARY_NAME}"
+DEST="${INSTALL_PATH}/gpionext_core.so"
 
 LATEST_TAG=$(curl -sf "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" \
     | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/') || LATEST_TAG=""
@@ -164,8 +190,6 @@ if [ -n "$LATEST_TAG" ]; then
     BINARY_URL="https://github.com/${GITHUB_REPO}/releases/download/${LATEST_TAG}/${BINARY_NAME}"
     echo "Downloading $BINARY_URL..."
     if curl -sfL "$BINARY_URL" -o "$DEST"; then
-        chmod 755 "$DEST"
-        ln -sf "$DEST" "${INSTALL_PATH}/gpionext_core.so"
         curl -sfL "https://github.com/${GITHUB_REPO}/releases/download/${LATEST_TAG}/VERSION" \
             -o "${INSTALL_PATH}/VERSION" 2>/dev/null || true
         echo -e "${GREEN}Binary downloaded: $(cat "${INSTALL_PATH}/VERSION" 2>/dev/null || echo "$LATEST_TAG")${NONE}"
@@ -212,8 +236,8 @@ else
     cat >> "$CUSTOM_SH" << 'HOOKEOF'
 
 # GPIOnext begin
-/recalbox/share/system/gpionext/venv/bin/python3 -u \
-    /recalbox/share/system/gpionext/python/gpionext.py \
+PYTHONPATH=/recalbox/share/system/gpionext/pylib \
+    python3 -u /recalbox/share/system/gpionext/python/gpionext.py \
     --debounce 1 --combo_delay 50 &
 echo $! > /run/gpionext.pid
 # GPIOnext end
@@ -263,8 +287,8 @@ mkdir -p "$ROMS_DIR"
 
 cat > "${ROMS_DIR}/Start GPIOnext.sh" << 'ROMEOF'
 #!/bin/bash
-/recalbox/share/system/gpionext/venv/bin/python3 -u \
-    /recalbox/share/system/gpionext/python/gpionext.py \
+PYTHONPATH=/recalbox/share/system/gpionext/pylib \
+    python3 -u /recalbox/share/system/gpionext/python/gpionext.py \
     --debounce 1 --combo_delay 50 &
 echo $! > /run/gpionext.pid
 sleep 2
@@ -281,8 +305,8 @@ ROMEOF
 
 cat > "${ROMS_DIR}/Configure GPIOnext.sh" << 'ROMEOF'
 #!/bin/bash
-/recalbox/share/system/gpionext/venv/bin/python3 \
-    /recalbox/share/system/gpionext/python/ui/config_manager.py
+PYTHONPATH=/recalbox/share/system/gpionext/pylib \
+    python3 /recalbox/share/system/gpionext/python/ui/config_manager.py
 ROMEOF
 
 cat > "${ROMS_DIR}/Update GPIOnext.sh" << 'ROMEOF'
@@ -315,7 +339,7 @@ fi
 
 read -rp $'\e[35m\e[4mStart GPIOnext now?\e[0m [Y/N] ' USER_INPUT
 if [[ "$USER_INPUT" =~ ^[Yy] ]]; then
-    "${INSTALL_PATH}/venv/bin/python3" -u \
+    PYTHONPATH="$PYLIB" python3 -u \
         "${INSTALL_PATH}/python/gpionext.py" --debounce 1 --combo_delay 50 &
     echo $! > "$PID_FILE"
     echo -e "${GREEN}GPIOnext started (PID: $(cat "$PID_FILE"))${NONE}"

@@ -85,21 +85,43 @@ jobs:
           rm -rf dist/tmp dist/*.whl
           echo "Built: $(ls dist/)"
 
+      - name: Install cross-compilation toolchain for config-manager
+        run: |
+          case "${{ matrix.target }}" in
+            armv7-unknown-linux-gnueabihf)
+              sudo apt-get install -y gcc-arm-linux-gnueabihf ;;
+            aarch64-unknown-linux-gnu)
+              sudo apt-get install -y gcc-aarch64-linux-gnu ;;
+          esac
+
+      - name: Build config-manager binary
+        env:
+          CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER: arm-linux-gnueabihf-gcc
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: |
+          cargo build --release -p gpionext-config --target ${{ matrix.target }}
+          cp target/${{ matrix.target }}/release/gpionext-config \
+             dist/gpionext-config-${{ matrix.arch }}
+          echo "Config manager: $(ls dist/gpionext-config-*)"
+
       - name: Write VERSION file
         run: echo "${{ steps.version.outputs.VERSION }}" > dist/VERSION
 
-      - name: Upload artifact
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: gpionext_core-${{ matrix.arch }}
-          path: dist/gpionext_core-${{ matrix.arch }}.so
+          name: gpionext-${{ matrix.arch }}
+          path: |
+            dist/gpionext_core-${{ matrix.arch }}.so
+            dist/gpionext-config-${{ matrix.arch }}
 
-      - name: Attach binary to GitHub Release
+      - name: Attach binaries to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/gpionext_core-${{ matrix.arch }}.so
+            dist/gpionext-config-${{ matrix.arch }}
             dist/VERSION
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

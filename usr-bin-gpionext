@@ -17,8 +17,9 @@
 
 INSTALL_PATH="/opt/gpionext"
 SERVICE_FILE="/lib/systemd/system/gpionext.service"
-CONFIG_SCRIPT="${INSTALL_PATH}/python/ui/config_manager.py"
-VENV_PYTHON="${INSTALL_PATH}/venv/bin/python3"
+# Native Rust config manager — no Python required
+CONFIG_BIN="${INSTALL_PATH}/bin/gpionext-config"
+CONFIG_JSON="${INSTALL_PATH}/config/gpionext.json"
 
 NONE='\033[00m'
 CYAN='\033[36m'
@@ -98,14 +99,14 @@ case "$1" in
 # ── Configuration ──────────────────────────────────────────────────────────
 
 "CONFIG")
-    # Extract daemon flags from ExecStart line (everything after gpionext.py)
-    if [ -f "$SERVICE_FILE" ]; then
-        EXEC_ARGS=$(grep '^ExecStart=' "$SERVICE_FILE" | sed -E 's/.*gpionext\.py[[:space:]]*//')
-    else
-        EXEC_ARGS=""
+    if [ ! -x "$CONFIG_BIN" ] && command -v gpionext-config &>/dev/null; then
+        CONFIG_BIN="$(command -v gpionext-config)"
     fi
-    # Pass daemon flags first, followed by manual CLI arguments for overrides
-    sudo "$VENV_PYTHON" "$CONFIG_SCRIPT" $EXEC_ARGS "${@:2}"
+    if [ ! -x "$CONFIG_BIN" ]; then
+        echo -e "${RED}Error: gpionext-config not found at ${CONFIG_BIN}${NONE}"
+        exit 1
+    fi
+    sudo "$CONFIG_BIN" --config "$CONFIG_JSON" "${@:2}"
     ;;
 
 # ── Diagnostics ────────────────────────────────────────────────────────────

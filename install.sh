@@ -98,6 +98,18 @@ echo -e "Target version: ${BOLD}${VERSION}${NONE}"
 BACKUP_DIR="/tmp/gpionext-update-backup"
 SERVICE_FILE="/lib/systemd/system/gpionext.service"
 CONFIG_DB_PATH="${INSTALL_PATH}/config/config.db"
+CONFIG_JSON_PATH="${INSTALL_PATH}/config/gpionext.json"
+
+# Detect CPU architecture for binary selection
+detect_arch() {
+    case "$(uname -m)" in
+        armv7l|armv6l) echo "armv7l" ;;
+        aarch64)        echo "aarch64" ;;
+        x86_64)         echo "x86_64" ;;
+        *)              echo "aarch64" ;;  # safe default for Pi
+    esac
+}
+ARCH="$(detect_arch)"
 
 # ---------------------------------------------------------------------------
 # Root check
@@ -140,7 +152,10 @@ if $UPDATE_MODE; then
     rm -rf "$BACKUP_DIR"
     mkdir -p "$BACKUP_DIR"
     
-    # 1. Back up the critical database file
+    # 1. Back up config files (JSON takes priority; fall back to legacy DB)
+    if [ -f "$CONFIG_JSON_PATH" ]; then
+        cp "$CONFIG_JSON_PATH" "${BACKUP_DIR}/gpionext.json"
+    fi
     if [ -f "$CONFIG_DB_PATH" ]; then
         cp "$CONFIG_DB_PATH" "${BACKUP_DIR}/config.db"
     fi
@@ -182,6 +197,29 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Download pre-built Rust binaries from GitHub Releases
+# ---------------------------------------------------------------------------
+
+RELEASE_BASE="https://github.com/${GITHUB_REPO}/releases/download/${VERSION}"
+
+echo -e "${CYAN}Downloading gpionext_core (${ARCH})...${NONE}"
+mkdir -p "${INSTALL_PATH}/bin"
+curl -fL "${RELEASE_BASE}/gpionext_core-${ARCH}.so" \
+    -o "${INSTALL_PATH}/bin/gpionext_core.so" \
+    || echo -e "${FUSCHIA}Warning: could not download gpionext_core binary (may build from source).${NONE}"
+
+echo -e "${CYAN}Downloading gpionext-config (${ARCH})...${NONE}"
+curl -fL "${RELEASE_BASE}/gpionext-config-${ARCH}" \
+    -o "${INSTALL_PATH}/bin/gpionext-config" \
+    && chmod +x "${INSTALL_PATH}/bin/gpionext-config" \
+    || echo -e "${FUSCHIA}Warning: could not download gpionext-config binary.${NONE}"
+
+# Install config manager to /usr/local/bin so it's in PATH everywhere
+if [ -f "${INSTALL_PATH}/bin/gpionext-config" ]; then
+    install -m 755 "${INSTALL_PATH}/bin/gpionext-config" /usr/local/bin/gpionext-config
+fi
+
+# ---------------------------------------------------------------------------
 # Hand-off to platform setup script
 # ---------------------------------------------------------------------------
 
@@ -196,9 +234,20 @@ fi
 
 if $UPDATE_MODE; then
     echo -e "${CYAN}Restoring preserved settings...${NONE}"
-    if [ -f "${BACKUP_DIR}/config.db" ]; then
-        mkdir -p "${INSTALL_PATH}/config"
+    mkdir -p "${INSTALL_PATH}/config"
+
+    # Restore JSON config if it was backed up
+    if [ -f "${BACKUP_DIR}/gpionext.json" ]; then
+        cp "${BACKUP_DIR}/gpionext.json" "$CONFIG_JSON_PATH"
+    # Migrate legacy config.db → gpionext.json if JSON not yet created
+    elif [ -f "${BACKUP_DIR}/config.db" ]; then
         cp "${BACKUP_DIR}/config.db" "$CONFIG_DB_PATH"
+        if command -v sqlite3 &>/dev/null && [ ! -f "$CONFIG_JSON_PATH" ]; then
+            echo -e "${CYAN}Migrating config.db → gpionext.json...${NONE}"
+            bash "${INSTALL_PATH}/setup/migrate_db_to_json.sh" \
+                "$CONFIG_DB_PATH" "$CONFIG_JSON_PATH" \
+                || echo -e "${FUSCHIA}Warning: migration failed, keeping config.db.${NONE}"
+        fi
     fi
 
     # On stock only: splice saved runtime flags back into the new service file.
