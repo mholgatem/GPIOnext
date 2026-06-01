@@ -1,5 +1,5 @@
 [package]
-name = "gpionext_core"
+name = "gpionext-core"
 version = "0.1.0"
 edition = "2021"
 description = "Rust hot-path extension for GPIOnext: GPIO event dispatch, bitmask combo engine, uinput HID writes, i2c device drivers"
