@@ -1,13 +1,13 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::Line,
     widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
     Frame,
 };
 
-use crate::{config::GpioConfig, ui::ModalAction};
+use crate::{config::GpioConfig, ui::{theme, ModalAction}};
 use super::Modal;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -106,7 +106,10 @@ impl AddI2cModal {
                     _ => unreachable!(),
                 };
                 match key.code {
-                    KeyCode::Backspace => { field.pop(); (Some(Modal::AddI2c(self)), None, false) }
+                    KeyCode::Backspace | KeyCode::Char('\x08') | KeyCode::Char('\x7f') => {
+                        field.pop();
+                        (Some(Modal::AddI2c(self)), None, false)
+                    }
                     KeyCode::Char(c) => {
                         field.push(c);
                         (Some(Modal::AddI2c(self)), None, false)
@@ -164,7 +167,7 @@ impl AddI2cModal {
         let block = Block::default()
             .title(title)
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Cyan));
+            .border_style(theme::border_normal());
         let inner = block.inner(popup);
         f.render_widget(block, popup);
 
@@ -175,12 +178,7 @@ impl AddI2cModal {
                     .map(|c| ListItem::new(Line::from(c.label())))
                     .collect();
                 let list = List::new(items)
-                    .highlight_style(
-                        Style::default()
-                            .fg(Color::Black)
-                            .bg(Color::Yellow)
-                            .add_modifier(Modifier::BOLD),
-                    )
+                    .highlight_style(theme::list_selected())
                     .highlight_symbol("▶ ");
                 f.render_stateful_widget(list, inner, &mut self.chip_state);
             }
@@ -198,13 +196,13 @@ impl AddI2cModal {
                 f.render_widget(Paragraph::new(label), chunks[0]);
                 f.render_widget(
                     Paragraph::new(format!("> {value}_"))
-                        .block(Block::default().borders(Borders::BOTTOM))
-                        .style(Style::default().fg(Color::Yellow)),
+                        .block(Block::default().borders(Borders::BOTTOM).border_style(theme::border_normal()))
+                        .style(theme::input_text()),
                     chunks[1],
                 );
                 f.render_widget(
                     Paragraph::new("Enter to continue  Esc to cancel")
-                        .style(Style::default().fg(Color::DarkGray)),
+                        .style(theme::hint_text()),
                     chunks[2],
                 );
             }

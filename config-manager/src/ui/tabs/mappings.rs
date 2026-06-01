@@ -1,10 +1,12 @@
-/// Mappings tab — shows button/key/axis/command rows for the selected device.
-/// Provides joypad, keyboard, and command wizards via modal sequences.
+/// Mappings tab — shows button/key/axis/command rows for all or one device.
+///
+/// Default: shows all devices' mappings with a "Device" column.
+/// Press f/c to filter to a single device; "All" clears the filter.
 
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::Style,
     text::{Line, Span},
     widgets::{Block, Borders, Cell, Paragraph, Row, Table, TableState},
     Frame,
@@ -21,43 +23,42 @@ use crate::{
             selection::SingleSelectModal,
             Modal,
         },
-        ModalAction,
+        theme, ModalAction,
     },
 };
+use super::TabHint;
 
 pub struct MappingsTab {
-    pub selected_device: Option<String>,
+    /// None = show all devices; Some(name) = show only that device.
+    pub filter_device: Option<String>,
     pub state: TableState,
 }
 
 impl MappingsTab {
     pub fn new() -> Self {
         Self {
-            selected_device: None,
+            filter_device: None,
             state: TableState::default(),
         }
     }
 
-    pub fn load_device(&mut self, device: &str, _cfg: &GpioConfig) {
-        self.selected_device = Some(device.to_owned());
+    /// Set the active device filter and reset the cursor.
+    pub fn set_filter(&mut self, device: Option<String>) {
+        self.filter_device = device;
         self.state.select(Some(0));
     }
 
     pub fn handle_key(&mut self, key: KeyEvent, cfg: &mut GpioConfig) -> Option<Modal> {
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => {
-                let device = self.selected_device.as_ref()?;
-                let rows = config::get_device_rows(cfg, device);
                 let i = self.state.selected().unwrap_or(0);
                 if i > 0 {
                     self.state.select(Some(i - 1));
                 }
-                let _ = rows; // borrow released
                 None
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                let device = self.selected_device.as_ref()?;
-                let count = config::get_device_rows(cfg, device).len();
+                let count = self.visible_row_count(cfg);
                 let i = self.state.selected().unwrap_or(0);
                 if i + 1 < count {
                     self.state.select(Some(i + 1));
@@ -65,36 +66,58 @@ impl MappingsTab {
                 None
             }
 
-            // 'c' = change/choose device (Tab is consumed globally for tab switching)
-            KeyCode::Char('c') | KeyCode::Char('C') => {
-                let devices: Vec<String> = DEVICE_LIST.iter().map(|&s| s.to_owned()).collect();
+            // f / c: open filter modal (All + each device)
+            KeyCode::Char('f') | KeyCode::Char('F') | KeyCode::Char('c') | KeyCode::Char('C') => {
+                let mut items = vec!["All".to_owned()];
+                items.extend(DEVICE_LIST.iter().map(|&s| s.to_owned()));
                 Some(Modal::SingleSelect(SingleSelectModal::new(
-                    "Select Device",
-                    devices,
-                    |idx, _cfg| {
-                        if let Some(i) = idx {
-                            let device = DEVICE_LIST[i].to_owned();
-                            (None, Some(ModalAction::RefreshMappingsTab(device)))
-                        } else {
-                            (None, None)
-                        }
+                    "Filter by Device",
+                    items,
+                    |idx, _cfg| match idx {
+                        None => (None, None), // Esc: no change
+                        Some(0) => (None, Some(ModalAction::SetMappingsFilter(None))), // All
+                        Some(i) => (
+                            None,
+                            Some(ModalAction::SetMappingsFilter(Some(
+                                DEVICE_LIST[i - 1].to_owned(),
+                            ))),
+                        ),
                     },
                 )))
             }
 
-            // Add mapping wizard — entry point depends on device type
+            // n: add mapping. If filtered, go straight to wizard; otherwise pick device first.
             KeyCode::Char('n') | KeyCode::Char('N') => {
-                let device = self.selected_device.clone()?;
-                launch_add_wizard(device)
+                if let Some(ref device) = self.filter_device.clone() {
+                    launch_add_wizard(device.clone())
+                } else {
+                    let devices: Vec<String> = DEVICE_LIST.iter().map(|&s| s.to_owned()).collect();
+                    Some(Modal::SingleSelect(SingleSelectModal::new(
+                        "Select Device for New Mapping",
+                        devices,
+                        |idx, _cfg| {
+                            if let Some(i) = idx {
+                                let device = DEVICE_LIST[i].to_owned();
+                                (launch_add_wizard(device), None)
+                            } else {
+                                (None, None)
+                            }
+                        },
+                    )))
+                }
             }
 
-            // Delete selected mapping
+            // d: delete selected mapping
             KeyCode::Char('d') | KeyCode::Delete => {
-                let device = self.selected_device.as_ref()?;
                 let i = self.state.selected()?;
-                // Clone the strings we need before dropping the borrow on cfg.
-                let name = config::get_device_rows(cfg, device).get(i)?.name.clone();
-                let device = device.clone();
+                let (name, device) = if let Some(ref dev) = self.filter_device {
+                    let rows = config::get_device_rows(cfg, dev);
+                    let row = rows.get(i)?;
+                    (row.name.clone(), dev.clone())
+                } else {
+                    let row = cfg.devices.get(i)?;
+                    (row.name.clone(), row.device.clone())
+                };
                 Some(Modal::Confirm(ConfirmModal::new(
                     "Delete Mapping",
                     format!("Delete '{name}' from {device}?"),
@@ -113,47 +136,116 @@ impl MappingsTab {
         }
     }
 
+    fn visible_row_count(&self, cfg: &GpioConfig) -> usize {
+        if let Some(ref dev) = self.filter_device {
+            config::get_device_rows(cfg, dev).len()
+        } else {
+            cfg.devices.len()
+        }
+    }
+
     pub fn render(&mut self, f: &mut Frame, area: Rect, cfg: &GpioConfig) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(2), Constraint::Min(0)])
             .split(area);
 
-        // Device selector banner
-        let banner = if let Some(ref d) = self.selected_device {
-            format!(" Device: {d}  [n] Add mapping  [d] Delete  [c] Change device ")
+        // Banner / header
+        let banner = if let Some(ref d) = self.filter_device {
+            format!(" Device: {d}  [n] Add  [d] Delete  [f] Filter  [c] Change ")
         } else {
-            " No device selected ".to_owned()
+            " All Devices  [n] Add  [d] Delete  [f] Filter by device ".to_owned()
         };
         f.render_widget(
             Paragraph::new(Line::from(banner.as_str()))
-                .block(Block::default().borders(Borders::BOTTOM))
-                .style(Style::default().fg(Color::Cyan)),
+                .block(
+                    Block::default()
+                        .borders(Borders::BOTTOM)
+                        .border_style(theme::border_normal()),
+                )
+                .style(Style::default().fg(theme::CYAN)),
             chunks[0],
         );
 
-        let device = match &self.selected_device {
-            Some(d) => d.clone(),
-            None => {
-                f.render_widget(
-                    Paragraph::new(vec![
-                        Line::from(""),
-                        Line::from(Span::styled(
-                            "  Press [n] on the Devices tab and select a device,",
-                            Style::default().fg(Color::DarkGray),
-                        )),
-                        Line::from(Span::styled(
-                            "  or press [c] here to choose a device directly.",
-                            Style::default().fg(Color::DarkGray),
-                        )),
-                    ]),
-                    chunks[1],
-                );
-                return;
-            }
-        };
+        if let Some(ref device) = self.filter_device.clone() {
+            self.render_filtered(f, chunks[1], cfg, device);
+        } else {
+            self.render_all(f, chunks[1], cfg);
+        }
+    }
 
-        let rows_data = config::get_device_rows(cfg, &device);
+    fn render_all(&mut self, f: &mut Frame, area: Rect, cfg: &GpioConfig) {
+        if cfg.devices.is_empty() {
+            f.render_widget(
+                Paragraph::new(vec![
+                    Line::from(""),
+                    Line::from(Span::styled(
+                        "  No mappings configured yet.",
+                        theme::hint_text(),
+                    )),
+                    Line::from(Span::styled(
+                        "  Press [n] to add, or [f] to filter by device.",
+                        Style::default().fg(theme::CYAN),
+                    )),
+                ])
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(theme::border_normal())
+                        .title(" All Mappings "),
+                ),
+                area,
+            );
+            return;
+        }
+
+        let header = Row::new(vec![
+            Cell::from("Device").style(theme::header()),
+            Cell::from("Name").style(theme::header()),
+            Cell::from("Type").style(theme::header()),
+            Cell::from("Pins").style(theme::header()),
+            Cell::from("Command / Code").style(theme::header()),
+        ]);
+
+        let rows: Vec<Row> = cfg
+            .devices
+            .iter()
+            .map(|r| {
+                Row::new(vec![
+                    Cell::from(r.device.as_str()),
+                    Cell::from(r.name.as_str()),
+                    Cell::from(r.event_type.as_str()),
+                    Cell::from(r.pins.as_str()),
+                    Cell::from(r.command.as_str()),
+                ])
+            })
+            .collect();
+
+        let table = Table::new(
+            rows,
+            [
+                Constraint::Percentage(18),
+                Constraint::Percentage(22),
+                Constraint::Percentage(10),
+                Constraint::Percentage(18),
+                Constraint::Percentage(32),
+            ],
+        )
+        .header(header)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(theme::border_normal())
+                .title(" All Mappings "),
+        )
+        .highlight_style(theme::selected_row())
+        .highlight_symbol("▶ ");
+
+        f.render_stateful_widget(table, area, &mut self.state);
+    }
+
+    fn render_filtered(&mut self, f: &mut Frame, area: Rect, cfg: &GpioConfig, device: &str) {
+        let rows_data = config::get_device_rows(cfg, device);
 
         if rows_data.is_empty() {
             f.render_widget(
@@ -161,26 +253,30 @@ impl MappingsTab {
                     Line::from(""),
                     Line::from(Span::styled(
                         format!("  No mappings for {device} yet."),
-                        Style::default().fg(Color::DarkGray),
+                        theme::hint_text(),
                     )),
                     Line::from(Span::styled(
                         "  Press [n] to add a mapping.",
-                        Style::default().fg(Color::Yellow),
+                        Style::default().fg(theme::CYAN),
                     )),
                 ])
-                .block(Block::default().borders(Borders::ALL).title(" Mappings ")),
-                chunks[1],
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(theme::border_normal())
+                        .title(format!(" {device} Mappings ")),
+                ),
+                area,
             );
             return;
         }
 
         let header = Row::new(vec![
-            Cell::from("Name").style(Style::default().add_modifier(Modifier::BOLD)),
-            Cell::from("Type").style(Style::default().add_modifier(Modifier::BOLD)),
-            Cell::from("Pins").style(Style::default().add_modifier(Modifier::BOLD)),
-            Cell::from("Command / Code").style(Style::default().add_modifier(Modifier::BOLD)),
-        ])
-        .style(Style::default().fg(Color::Yellow));
+            Cell::from("Name").style(theme::header()),
+            Cell::from("Type").style(theme::header()),
+            Cell::from("Pins").style(theme::header()),
+            Cell::from("Command / Code").style(theme::header()),
+        ]);
 
         let rows: Vec<Row> = rows_data
             .iter()
@@ -204,15 +300,22 @@ impl MappingsTab {
             ],
         )
         .header(header)
-        .block(Block::default().borders(Borders::ALL).title(" Mappings "))
-        .highlight_style(
-            Style::default()
-                .bg(Color::DarkGray)
-                .add_modifier(Modifier::BOLD),
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(theme::border_normal())
+                .title(format!(" {device} Mappings ")),
         )
+        .highlight_style(theme::selected_row())
         .highlight_symbol("▶ ");
 
-        f.render_stateful_widget(table, chunks[1], &mut self.state);
+        f.render_stateful_widget(table, area, &mut self.state);
+    }
+}
+
+impl TabHint for MappingsTab {
+    fn hint(&self) -> &str {
+        "↑↓/jk: move  n: add  d: delete  f/c: filter device  s: save  q: quit"
     }
 }
 
@@ -232,8 +335,6 @@ fn launch_add_wizard(device: String) -> Option<Modal> {
     }
 }
 
-// --- Joypad wizard: AXIS or BUTTON selection, then pin capture ---
-
 fn joypad_type_modal(device: String) -> Modal {
     Modal::SingleSelect(SingleSelectModal::new(
         "Add Joypad Mapping — Type",
@@ -247,7 +348,6 @@ fn joypad_type_modal(device: String) -> Modal {
 }
 
 fn joypad_axis_name_modal(device: String) -> Modal {
-    // For an axis, pick direction
     Modal::SingleSelect(SingleSelectModal::new(
         "Add Axis — Direction",
         vec!["UP".into(), "DOWN".into(), "LEFT".into(), "RIGHT".into()],
@@ -267,11 +367,7 @@ fn joypad_axis_name_modal(device: String) -> Modal {
                         format!("Hold pin for {name}"),
                         move |pins, cfg| {
                             if let Some(vpins) = pins {
-                                let pins_str = if vpins.len() == 1 {
-                                    vpins[0].to_string()
-                                } else {
-                                    format!("({})", vpins.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(", "))
-                                };
+                                let pins_str = pins_to_str(&vpins);
                                 config::upsert_mapping(cfg, DeviceRow::new(&dev2, &name, "AXIS", &command, pins_str));
                             }
                             (None, Some(ModalAction::Save))
@@ -302,11 +398,7 @@ fn joypad_button_modal(device: String) -> Modal {
                         format!("Hold pin for {name}"),
                         move |pins, cfg| {
                             if let Some(vpins) = pins {
-                                let pins_str = if vpins.len() == 1 {
-                                    vpins[0].to_string()
-                                } else {
-                                    format!("({})", vpins.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(", "))
-                                };
+                                let pins_str = pins_to_str(&vpins);
                                 config::upsert_mapping(cfg, DeviceRow::new(&dev2, &name, "BUTTON", &code, pins_str));
                             }
                             (None, Some(ModalAction::Save))
@@ -320,8 +412,6 @@ fn joypad_button_modal(device: String) -> Modal {
         },
     ))
 }
-
-// --- Keyboard wizard ---
 
 fn keyboard_wizard_modal(device: String) -> Modal {
     let items: Vec<String> = KEY_LIST.iter().map(|&(name, _)| name.to_owned()).collect();
@@ -339,11 +429,7 @@ fn keyboard_wizard_modal(device: String) -> Modal {
                         format!("Hold pin for {name}"),
                         move |pins, cfg| {
                             if let Some(vpins) = pins {
-                                let pins_str = if vpins.len() == 1 {
-                                    vpins[0].to_string()
-                                } else {
-                                    format!("({})", vpins.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(", "))
-                                };
+                                let pins_str = pins_to_str(&vpins);
                                 config::upsert_mapping(cfg, DeviceRow::new(&dev2, &name, "KEY", &code, pins_str));
                             }
                             (None, Some(ModalAction::Save))
@@ -357,8 +443,6 @@ fn keyboard_wizard_modal(device: String) -> Modal {
         },
     ))
 }
-
-// --- Command wizard: optionally pick a preset or type custom ---
 
 fn command_wizard_modal(device: String) -> Modal {
     let mut items: Vec<String> = COMMAND_PRESETS.iter().map(|&(name, _)| name.to_owned()).collect();
@@ -388,7 +472,6 @@ fn command_wizard_modal(device: String) -> Modal {
                         None,
                     );
                 }
-                // Custom: open command input modal
                 let dev2 = device.clone();
                 return (
                     Some(Modal::CommandInput(CommandInputModal::new(
@@ -422,4 +505,12 @@ fn command_wizard_modal(device: String) -> Modal {
             (None, None)
         },
     ))
+}
+
+fn pins_to_str(vpins: &[u8]) -> String {
+    if vpins.len() == 1 {
+        vpins[0].to_string()
+    } else {
+        format!("({})", vpins.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(", "))
+    }
 }

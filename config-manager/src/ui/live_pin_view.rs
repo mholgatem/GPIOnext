@@ -3,14 +3,15 @@
 /// Renders as a table with 4 columns: pin number, pin label, state (●/○),
 /// and mapped action. Reads from the shared PinState updated by IpcClient.
 ///
-/// BOARD pins (0-63) come first; I2C virtual pins (64+) follow in a separate
-/// section. Pressed pins are highlighted in orange; unmapped pins are dimmed.
+/// BOARD pins (0-63) come first; I2C virtual pins (64+) follow.
+/// Pressed pins are highlighted in neon green-cyan; unmapped pins are dimmed.
+/// Supports stateful scrolling via TableState when `focused` is true.
 
 use ratatui::{
     layout::{Constraint, Rect},
-    style::{Color, Modifier, Style},
+    style::{Color, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Cell, Row, Table},
+    widgets::{Block, Borders, Cell, Row, Table, TableState},
     Frame,
 };
 use std::sync::{Arc, Mutex};
@@ -19,13 +20,21 @@ use crate::{
     config::GpioConfig,
     constants::{available_pins, board_to_gpio},
     ipc_client::PinState,
+    ui::theme,
 };
 
+/// Render the live pin monitor table.
+///
+/// `scroll` is a mutable `TableState` used for keyboard scrolling — the caller
+/// owns it and advances it with ↑/↓ keys when `focused` is true.
+/// `focused` controls the border highlight color.
 pub fn render(
     f: &mut Frame,
     area: Rect,
     cfg: &GpioConfig,
     pin_state: &Arc<Mutex<PinState>>,
+    scroll: &mut TableState,
+    focused: bool,
 ) {
     let state = pin_state.lock().unwrap();
     let mapping = build_mapping_label_map(cfg);
@@ -35,7 +44,6 @@ pub fn render(
 
     // Physical BOARD pins
     for &board_pin in available_pins() {
-        let vpin = board_pin as usize;
         let pressed = state.is_pressed(board_pin);
         let gpio_label = gpio_map
             .get(&board_pin)
@@ -46,12 +54,7 @@ pub fn render(
             .map(|s| s.as_str())
             .unwrap_or("unmapped");
 
-        rows.push(pin_row(
-            board_pin.to_string(),
-            gpio_label,
-            pressed,
-            mapped,
-        ));
+        rows.push(pin_row(board_pin.to_string(), gpio_label, pressed, mapped));
     }
 
     // I2C virtual pins from config
@@ -62,10 +65,7 @@ pub fn render(
                 let label = format!("i2c-0x{addr:02X}-{port}{bit}");
                 let vpin_id = mcp23017_vpin(addr, port, bit);
                 let pressed = state.is_pressed(vpin_id);
-                let mapped = mapping
-                    .get(&vpin_id)
-                    .map(|s| s.as_str())
-                    .unwrap_or("unmapped");
+                let mapped = mapping.get(&vpin_id).map(|s| s.as_str()).unwrap_or("unmapped");
                 rows.push(pin_row(vpin_id.to_string(), label, pressed, mapped));
             }
         }
@@ -76,10 +76,7 @@ pub fn render(
             let label = format!("i2c-0x{addr:02X}-ch{ch}");
             let vpin_id = ads1115_vpin(addr, ch);
             let pressed = state.is_pressed(vpin_id);
-            let mapped = mapping
-                .get(&vpin_id)
-                .map(|s| s.as_str())
-                .unwrap_or("unmapped");
+            let mapped = mapping.get(&vpin_id).map(|s| s.as_str()).unwrap_or("unmapped");
             rows.push(pin_row(vpin_id.to_string(), label, pressed, mapped));
         }
     }
@@ -89,18 +86,32 @@ pub fn render(
             let label = format!("i2c-0x{addr:02X}-P{pin}");
             let vpin_id = pcf8574_vpin(addr, pin);
             let pressed = state.is_pressed(vpin_id);
-            let mapped = mapping
-                .get(&vpin_id)
-                .map(|s| s.as_str())
-                .unwrap_or("unmapped");
+            let mapped = mapping.get(&vpin_id).map(|s| s.as_str()).unwrap_or("unmapped");
             rows.push(pin_row(vpin_id.to_string(), label, pressed, mapped));
         }
     }
 
-    let title = if state.connected {
-        " Live Pin Monitor  ● Connected "
+    let conn_indicator = if state.connected {
+        " ● Connected "
     } else {
-        " Live Pin Monitor  ○ Daemon not running "
+        " ○ Daemon not running "
+    };
+    let conn_style = if state.connected {
+        Style::default().fg(Color::LightGreen)
+    } else {
+        Style::default().fg(Color::Yellow)
+    };
+
+    // Build title with F3 label
+    let title = Line::from(vec![
+        Span::raw(" Live Pin Monitor [F3]  [↑↓] scroll  "),
+        Span::styled(conn_indicator, conn_style),
+    ]);
+
+    let border_style = if focused {
+        theme::border_focused()
+    } else {
+        theme::border_normal()
     };
 
     let table = Table::new(
@@ -119,11 +130,17 @@ pub fn render(
             Cell::from(""),
             Cell::from("Mapped action"),
         ])
-        .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        .style(theme::header()),
     )
-    .block(Block::default().title(title).borders(Borders::ALL));
+    .block(
+        Block::default()
+            .title(title)
+            .borders(Borders::ALL)
+            .border_style(border_style),
+    )
+    .highlight_style(theme::selected_row());
 
-    f.render_widget(table, area);
+    f.render_stateful_widget(table, area, scroll);
 }
 
 fn pin_row(pin: String, label: String, pressed: bool, mapped: &str) -> Row {
@@ -131,11 +148,9 @@ fn pin_row(pin: String, label: String, pressed: bool, mapped: &str) -> Row {
     let unmapped = mapped == "unmapped";
 
     let row_style = if pressed {
-        Style::default()
-            .fg(Color::Rgb(255, 165, 0)) // orange
-            .add_modifier(Modifier::BOLD)
+        theme::pressed_pin()
     } else if unmapped {
-        Style::default().fg(Color::DarkGray)
+        theme::unmapped_pin()
     } else {
         Style::default()
     };
@@ -160,8 +175,16 @@ fn build_mapping_label_map(cfg: &GpioConfig) -> std::collections::HashMap<u8, St
     map
 }
 
+/// Count total rows (BOARD pins + I2C virtual pins) for scroll clamping.
+pub fn total_rows(cfg: &GpioConfig) -> usize {
+    available_pins().len()
+        + cfg.i2c.mcp23017.len() * 16
+        + cfg.i2c.ads1115.len() * 4
+        + cfg.i2c.pcf8574.len() * 8
+}
+
 // ---------------------------------------------------------------------------
-// Virtual pin number helpers (mirrors config::pin_to_vpin internals)
+// Virtual pin number helpers
 // ---------------------------------------------------------------------------
 
 fn parse_addr(s: &str) -> u8 {

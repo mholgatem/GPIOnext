@@ -11,7 +11,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::{config::GpioConfig, ipc_client::PinState, ui::ModalAction};
+use crate::{config::GpioConfig, ipc_client::PinState, ui::{theme, ModalAction}};
 use super::Modal;
 
 const HOLD_DURATION: Duration = Duration::from_millis(1000);
@@ -58,16 +58,15 @@ impl PinCaptureModal {
                 (modal, action, false)
             }
             KeyCode::Enter => {
-                // Confirm manual entry
                 let pins = parse_pin_input(&self.input);
                 if pins.is_empty() {
-                    // Nothing entered yet — stay open
                     return (Some(Modal::PinCapture(self)), None, false);
                 }
                 let (modal, action) = (self.on_capture)(Some(pins), cfg);
                 (modal, action, false)
             }
-            KeyCode::Backspace => {
+            // Handle all backspace variants
+            KeyCode::Backspace | KeyCode::Char('\x08') | KeyCode::Char('\x7f') => {
                 self.input.pop();
                 (Some(Modal::PinCapture(self)), None, false)
             }
@@ -104,7 +103,7 @@ impl PinCaptureModal {
                 self.hold_pins = Some(pressed);
                 self.hold_since = Some(Instant::now());
             }
-            _ => {} // same pins, timer running
+            _ => {}
         }
     }
 
@@ -122,7 +121,7 @@ impl PinCaptureModal {
         let block = Block::default()
             .title(format!(" {} ", self.title))
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Magenta));
+            .border_style(theme::border_focused());
 
         let inner = block.inner(popup);
         f.render_widget(block, popup);
@@ -148,7 +147,7 @@ impl PinCaptureModal {
 
         // ── Daemon status ────────────────────────────────────────────────────
         let (status_text, status_color) = if connected {
-            ("● Daemon connected — hold pin(s) for 1 second to capture", Color::Green)
+            ("● Daemon connected — hold pin(s) for 1 second to capture", Color::LightGreen)
         } else {
             ("○ Daemon not running — use manual entry below", Color::Yellow)
         };
@@ -158,15 +157,15 @@ impl PinCaptureModal {
             chunks[0],
         );
 
-        // ── Live hold section (only meaningful when connected) ───────────────
+        // ── Live hold section ────────────────────────────────────────────────
         let pin_label = if !connected {
-            Span::styled("(connect daemon for live pin capture)", Style::default().fg(Color::DarkGray))
+            Span::styled("(connect daemon for live pin capture)", theme::hint_text())
         } else if pressed.is_empty() {
-            Span::styled("Hold a pin now…", Style::default().fg(Color::DarkGray))
+            Span::styled("Hold a pin now…", theme::hint_text())
         } else {
             Span::styled(
                 format!("Holding BOARD pin(s): {:?}", pressed),
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                Style::default().fg(theme::CYAN).add_modifier(Modifier::BOLD),
             )
         };
         f.render_widget(
@@ -182,9 +181,9 @@ impl PinCaptureModal {
             0.0
         };
         let gauge_style = if connected {
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+            Style::default().fg(theme::MAGENTA).add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(Color::DarkGray)
+            theme::hint_text()
         };
         f.render_widget(Gauge::default().gauge_style(gauge_style).ratio(ratio), chunks[3]);
 
@@ -192,7 +191,7 @@ impl PinCaptureModal {
         f.render_widget(
             Paragraph::new(Line::from(Span::styled(
                 "─────────────────────────────────────────────",
-                Style::default().fg(Color::DarkGray),
+                theme::hint_text(),
             )))
             .alignment(Alignment::Center),
             chunks[4],
@@ -208,17 +207,14 @@ impl PinCaptureModal {
         );
 
         let input_display = format!(" > {}▋", self.input);
-        let input_color = if self.input.is_empty() {
-            Color::DarkGray
+        let input_style = if self.input.is_empty() {
+            theme::hint_text()
         } else {
-            Color::Yellow
+            theme::input_text()
         };
         f.render_widget(
-            Paragraph::new(Line::from(Span::styled(
-                input_display,
-                Style::default().fg(input_color).add_modifier(Modifier::BOLD),
-            )))
-            .block(Block::default().borders(Borders::BOTTOM)),
+            Paragraph::new(Line::from(Span::styled(input_display, input_style)))
+                .block(Block::default().borders(Borders::BOTTOM).border_style(theme::border_normal())),
             chunks[6],
         );
 
@@ -226,7 +222,7 @@ impl PinCaptureModal {
         f.render_widget(
             Paragraph::new(Line::from(Span::styled(
                 "Enter: confirm   Esc: cancel   (e.g. 11  or  11,13 for combo)",
-                Style::default().fg(Color::DarkGray),
+                theme::hint_text(),
             )))
             .alignment(Alignment::Center),
             chunks[7],

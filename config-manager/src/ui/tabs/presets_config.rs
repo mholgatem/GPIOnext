@@ -3,9 +3,9 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::Style,
     text::Line,
-    widgets::{Block, Borders, Cell, List, ListItem, ListState, Paragraph, Row, Table},
+    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
     Frame,
 };
 
@@ -20,9 +20,10 @@ use crate::{
             text_input::TextInputModal,
             Modal,
         },
-        ModalAction,
+        theme, ModalAction,
     },
 };
+use super::TabHint;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Focus { Presets, DaemonControl }
@@ -202,16 +203,12 @@ impl PresetsConfigTab {
                     .title(" HAT Presets  [↑↓] select  [Enter] load  [e] Export  [i] Import ")
                     .borders(Borders::ALL)
                     .border_style(if self.focus == Focus::Presets {
-                        Style::default().fg(Color::Yellow)
+                        theme::border_focused()
                     } else {
-                        Style::default()
+                        theme::border_normal()
                     }),
             )
-            .highlight_style(
-                Style::default()
-                    .bg(Color::DarkGray)
-                    .add_modifier(Modifier::BOLD),
-            )
+            .highlight_style(theme::selected_row())
             .highlight_symbol("▶ ");
 
         f.render_stateful_widget(list, area, &mut self.preset_state);
@@ -222,9 +219,9 @@ impl PresetsConfigTab {
             .title(" Daemon Control  [Tab] focus  [←→] select  [Enter] run ")
             .borders(Borders::ALL)
             .border_style(if self.focus == Focus::DaemonControl {
-                Style::default().fg(Color::Yellow)
+                theme::border_focused()
             } else {
-                Style::default()
+                theme::border_normal()
             });
 
         let inner = block.inner(area);
@@ -242,12 +239,9 @@ impl PresetsConfigTab {
         let labels = ["  Start  ", "  Stop  ", "  Reload  "];
         for (i, (label, chunk)) in labels.iter().zip(btn_chunks.iter()).enumerate() {
             let style = if self.focus == Focus::DaemonControl && self.daemon_cursor == i {
-                Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD)
+                theme::list_selected()
             } else {
-                Style::default().fg(Color::White)
+                Style::default().fg(theme::CYAN)
             };
             f.render_widget(
                 Paragraph::new(Line::from(*label))
@@ -264,9 +258,15 @@ impl PresetsConfigTab {
                 Line::from("  [e] Export config to JSON file"),
                 Line::from("  [i] Import config from JSON file"),
             ])
-            .style(Style::default().fg(Color::DarkGray))
-            .block(Block::default().borders(Borders::TOP)),
+            .style(theme::hint_text())
+            .block(Block::default().borders(Borders::TOP).border_style(theme::border_normal())),
             area,
         );
+    }
+}
+
+impl TabHint for PresetsConfigTab {
+    fn hint(&self) -> &str {
+        "↑↓: select preset  Enter: load  e: export  i: import  Tab: focus daemon ctrl  q: quit"
     }
 }

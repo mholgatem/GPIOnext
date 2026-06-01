@@ -1,11 +1,16 @@
 /// I2C & Settings tab — daemon settings + I2C chip table + live pin view.
+///
+/// Three sub-panels, cycled with F1/F2/F3:
+///   [F1] Daemon Settings  — ↑↓ move, Enter/e edit, Space toggle
+///   [F2] I2C Chips        — ↑↓ move, n add, d delete
+///   [F3] Live Pin Monitor — ↑↓ scroll through all pins
 
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::Line,
-    widgets::{Block, Borders, Cell, Paragraph, Row, Table, TableState},
+    widgets::{Block, Borders, Cell, Row, Table, TableState},
     Frame,
 };
 use std::sync::{Arc, Mutex};
@@ -14,15 +19,16 @@ use crate::{
     config::{Ads1115Entry, GpioConfig, Mcp23017Entry, Pcf8574Entry},
     ipc_client::PinState,
     ui::{
+        live_pin_view,
         modals::{
             add_i2c::{AddI2cModal, ChipType, I2cEntry},
             confirm::ConfirmModal,
             Modal,
         },
-        ModalAction,
+        theme, ModalAction,
     },
 };
-use super::super::live_pin_view;
+use super::TabHint;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Focus { Settings, I2cTable, LivePins }
@@ -30,11 +36,11 @@ enum Focus { Settings, I2cTable, LivePins }
 pub struct I2cSettingsTab {
     focus: Focus,
     i2c_state: TableState,
-    /// Editable settings field index (0-6 matching DaemonSettings fields)
     settings_field: usize,
-    /// Temp buffer for editing the current settings field text
     edit_buf: String,
     editing: bool,
+    /// Scroll state for the live pin monitor (F3 panel).
+    live_pin_scroll: TableState,
 }
 
 impl I2cSettingsTab {
@@ -47,24 +53,21 @@ impl I2cSettingsTab {
             settings_field: 0,
             edit_buf: String::new(),
             editing: false,
+            live_pin_scroll: TableState::default(),
         }
     }
 
-    pub fn tick(&mut self) {
-        // Live pin view refreshes passively from Arc<Mutex<PinState>> — no tick state needed here
-    }
+    pub fn tick(&mut self) {}
 
     pub fn handle_key(&mut self, key: KeyEvent, cfg: &mut GpioConfig) -> Option<Modal> {
         match key.code {
-            // Switch focus between panels
-            KeyCode::F(1) => { self.focus = Focus::Settings; None }
-            KeyCode::F(2) => { self.focus = Focus::I2cTable; None }
-            KeyCode::F(3) => { self.focus = Focus::LivePins; None }
-
+            KeyCode::F(1) => { self.focus = Focus::Settings;  None }
+            KeyCode::F(2) => { self.focus = Focus::I2cTable;  None }
+            KeyCode::F(3) => { self.focus = Focus::LivePins;  None }
             _ => match self.focus {
-                Focus::Settings => self.handle_settings_key(key, cfg),
-                Focus::I2cTable => self.handle_i2c_key(key, cfg),
-                Focus::LivePins => None,
+                Focus::Settings  => self.handle_settings_key(key, cfg),
+                Focus::I2cTable  => self.handle_i2c_key(key, cfg),
+                Focus::LivePins  => self.handle_live_pin_key(key, cfg),
             },
         }
     }
@@ -77,7 +80,10 @@ impl I2cSettingsTab {
                     self.commit_edit(cfg);
                     self.editing = false;
                 }
-                KeyCode::Backspace => { self.edit_buf.pop(); }
+                // All backspace variants
+                KeyCode::Backspace | KeyCode::Char('\x08') | KeyCode::Char('\x7f') => {
+                    self.edit_buf.pop();
+                }
                 KeyCode::Char(c) => { self.edit_buf.push(c); }
                 _ => {}
             }
@@ -93,12 +99,27 @@ impl I2cSettingsTab {
                     self.edit_buf = self.current_field_value(cfg);
                     self.editing = true;
                 }
-                // Toggle bool fields with space
-                KeyCode::Char(' ') => {
-                    self.toggle_bool_field(cfg);
-                }
+                KeyCode::Char(' ') => { self.toggle_bool_field(cfg); }
                 _ => {}
             }
+        }
+        None
+    }
+
+    fn handle_live_pin_key(&mut self, key: KeyEvent, cfg: &GpioConfig) -> Option<Modal> {
+        let total = live_pin_view::total_rows(cfg);
+        match key.code {
+            KeyCode::Up | KeyCode::Char('k') => {
+                let i = self.live_pin_scroll.selected().unwrap_or(0);
+                self.live_pin_scroll.select(Some(i.saturating_sub(1)));
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                let i = self.live_pin_scroll.selected().unwrap_or(0);
+                if i + 1 < total {
+                    self.live_pin_scroll.select(Some(i + 1));
+                }
+            }
+            _ => {}
         }
         None
     }
@@ -120,13 +141,13 @@ impl I2cSettingsTab {
     fn commit_edit(&self, cfg: &mut GpioConfig) {
         let d = &mut cfg.daemon;
         match self.settings_field {
-            0 => { if let Ok(v) = self.edit_buf.parse() { d.combo_delay = v; } }
+            0 => { if let Ok(v) = self.edit_buf.parse() { d.combo_delay    = v; } }
             1 => { if let Ok(v) = self.edit_buf.parse() { d.key_hold_delay = v; } }
-            2 => { if let Ok(v) = self.edit_buf.parse() { d.debounce = v; } }
+            2 => { if let Ok(v) = self.edit_buf.parse() { d.debounce       = v; } }
             3 => { d.pins = self.edit_buf.clone(); }
             4 => { d.pulldown = self.edit_buf == "true"; }
-            5 => { d.dev = self.edit_buf == "true"; }
-            6 => { d.debug = self.edit_buf == "true"; }
+            5 => { d.dev      = self.edit_buf == "true"; }
+            6 => { d.debug    = self.edit_buf == "true"; }
             _ => {}
         }
     }
@@ -135,8 +156,8 @@ impl I2cSettingsTab {
         let d = &mut cfg.daemon;
         match self.settings_field {
             4 => d.pulldown = !d.pulldown,
-            5 => d.dev = !d.dev,
-            6 => d.debug = !d.debug,
+            5 => d.dev      = !d.dev,
+            6 => d.debug    = !d.debug,
             _ => {}
         }
     }
@@ -156,9 +177,7 @@ impl I2cSettingsTab {
             }
             KeyCode::Char('n') | KeyCode::Char('N') => {
                 Some(Modal::AddI2c(AddI2cModal::new(|entry, cfg| {
-                    if let Some(e) = entry {
-                        apply_i2c_entry(e, cfg);
-                    }
+                    if let Some(e) = entry { apply_i2c_entry(e, cfg); }
                     (None, Some(ModalAction::Save))
                 })))
             }
@@ -190,8 +209,8 @@ impl I2cSettingsTab {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(12), // top: settings + i2c table side by side
-                Constraint::Min(0),     // bottom: live pin view
+                Constraint::Length(12),
+                Constraint::Min(0),
             ])
             .split(area);
 
@@ -202,16 +221,14 @@ impl I2cSettingsTab {
 
         self.render_settings(f, top_chunks[0], cfg);
         self.render_i2c_table(f, top_chunks[1], cfg);
-        live_pin_view::render(f, chunks[1], cfg, pin_state);
-
-        // Focus indicator
-        let hint = match self.focus {
-            Focus::Settings  => "F1: Settings  F2: I2C Chips  F3: Live Pins  |  ↑↓ move  Enter/Space: edit",
-            Focus::I2cTable  => "F1: Settings  F2: I2C Chips  F3: Live Pins  |  n: Add  d: Delete",
-            Focus::LivePins  => "F1: Settings  F2: I2C Chips  F3: Live Pins",
-        };
-        // Hint is rendered by App's status bar via tab context; nothing to do here
-        let _ = hint;
+        live_pin_view::render(
+            f,
+            chunks[1],
+            cfg,
+            pin_state,
+            &mut self.live_pin_scroll,
+            self.focus == Focus::LivePins,
+        );
     }
 
     fn render_settings(&self, f: &mut Frame, area: Rect, cfg: &GpioConfig) {
@@ -235,31 +252,28 @@ impl I2cSettingsTab {
                 } else {
                     value.clone()
                 };
-                let style = if self.focus == Focus::Settings && self.settings_field == i {
-                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                let row_style = if self.focus == Focus::Settings && self.settings_field == i {
+                    theme::selected_btn()
                 } else {
                     Style::default()
                 };
                 Row::new(vec![
-                    Cell::from(*label).style(style),
-                    Cell::from(val_display).style(style),
+                    Cell::from(*label).style(row_style),
+                    Cell::from(val_display).style(row_style),
                 ])
             })
             .collect();
 
+        let focused = self.focus == Focus::Settings;
         let table = Table::new(
             rows,
             [Constraint::Percentage(55), Constraint::Percentage(45)],
         )
         .block(
             Block::default()
-                .title(" Daemon Settings  [↑↓] move  [Enter] edit  [Space] toggle ")
+                .title(" Settings [F1]  [↑↓] move  [Enter] edit  [Space] toggle ")
                 .borders(Borders::ALL)
-                .border_style(if self.focus == Focus::Settings {
-                    Style::default().fg(Color::Yellow)
-                } else {
-                    Style::default()
-                }),
+                .border_style(if focused { theme::border_focused() } else { theme::border_normal() }),
         );
 
         f.render_widget(table, area);
@@ -268,13 +282,13 @@ impl I2cSettingsTab {
     fn render_i2c_table(&mut self, f: &mut Frame, area: Rect, cfg: &GpioConfig) {
         let rows = build_i2c_rows(cfg);
         let header = Row::new(vec![
-            Cell::from("Chip").style(Style::default().add_modifier(Modifier::BOLD)),
-            Cell::from("Bus").style(Style::default().add_modifier(Modifier::BOLD)),
-            Cell::from("Address").style(Style::default().add_modifier(Modifier::BOLD)),
-            Cell::from("Int Pin").style(Style::default().add_modifier(Modifier::BOLD)),
-        ])
-        .style(Style::default().fg(Color::Yellow));
+            Cell::from("Chip").style(theme::header().add_modifier(Modifier::BOLD)),
+            Cell::from("Bus").style(theme::header().add_modifier(Modifier::BOLD)),
+            Cell::from("Address").style(theme::header().add_modifier(Modifier::BOLD)),
+            Cell::from("Int Pin").style(theme::header().add_modifier(Modifier::BOLD)),
+        ]);
 
+        let focused = self.focus == Focus::I2cTable;
         let table = Table::new(
             rows,
             [
@@ -287,21 +301,29 @@ impl I2cSettingsTab {
         .header(header)
         .block(
             Block::default()
-                .title(" I2C Chips  [n] Add  [d] Delete ")
+                .title(" I2C Chips [F2]  [n] Add  [d] Delete ")
                 .borders(Borders::ALL)
-                .border_style(if self.focus == Focus::I2cTable {
-                    Style::default().fg(Color::Yellow)
-                } else {
-                    Style::default()
-                }),
+                .border_style(if focused { theme::border_focused() } else { theme::border_normal() }),
         )
-        .highlight_style(
-            Style::default()
-                .bg(Color::DarkGray)
-                .add_modifier(Modifier::BOLD),
-        );
+        .highlight_style(theme::selected_row());
 
         f.render_stateful_widget(table, area, &mut self.i2c_state);
+    }
+}
+
+impl TabHint for I2cSettingsTab {
+    fn hint(&self) -> &str {
+        match self.focus {
+            Focus::Settings => {
+                "Settings [F1] | ↑↓: move  Enter/e: edit  Space: toggle  F2: I2C Chips  F3: Live Pins"
+            }
+            Focus::I2cTable => {
+                "I2C Chips [F2] | ↑↓: move  n: add  d: delete  F1: Settings  F3: Live Pins"
+            }
+            Focus::LivePins => {
+                "Live Pins [F3] | ↑↓: scroll  F1: Settings  F2: I2C Chips"
+            }
+        }
     }
 }
 

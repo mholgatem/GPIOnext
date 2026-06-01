@@ -1,13 +1,13 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Style},
+    style::Style,
     text::Line,
     widgets::{Block, Borders, Clear, Paragraph},
     Frame,
 };
 
-use crate::{config::GpioConfig, ui::ModalAction};
+use crate::{config::GpioConfig, ui::{theme, ModalAction}};
 use super::Modal;
 
 /// Generic single-line text input modal.
@@ -48,7 +48,8 @@ impl TextInputModal {
                 let (modal, action) = (self.on_confirm)(val, cfg);
                 (modal, action, false)
             }
-            KeyCode::Backspace => {
+            // Handle all backspace variants: DEL key, Ctrl+H (\x08), \x7f
+            KeyCode::Backspace | KeyCode::Char('\x08') | KeyCode::Char('\x7f') => {
                 self.value.pop();
                 (Some(Modal::TextInput(self)), None, false)
             }
@@ -67,7 +68,7 @@ impl TextInputModal {
         let block = Block::default()
             .title(format!(" {} ", self.title))
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Cyan));
+            .border_style(theme::border_normal());
         let inner = block.inner(popup);
         f.render_widget(block, popup);
 
@@ -80,16 +81,19 @@ impl TextInputModal {
             ])
             .split(inner);
 
-        f.render_widget(Paragraph::new(self.prompt.as_str()), chunks[0]);
+        f.render_widget(
+            Paragraph::new(self.prompt.as_str()).style(Style::default().fg(theme::CYAN)),
+            chunks[0],
+        );
         f.render_widget(
             Paragraph::new(format!("> {}_", self.value))
-                .block(Block::default().borders(Borders::BOTTOM))
-                .style(Style::default().fg(Color::Yellow)),
+                .block(Block::default().borders(Borders::BOTTOM).border_style(theme::border_normal()))
+                .style(theme::input_text()),
             chunks[1],
         );
         f.render_widget(
             Paragraph::new(Line::from("Enter: confirm   Esc: cancel"))
-                .style(Style::default().fg(Color::DarkGray)),
+                .style(theme::hint_text()),
             chunks[2],
         );
     }

@@ -1,13 +1,13 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::Line,
     widgets::{Block, Borders, Clear, Paragraph},
     Frame,
 };
 
-use crate::{config::GpioConfig, ui::ModalAction};
+use crate::{config::GpioConfig, ui::{theme, ModalAction}};
 use super::Modal;
 
 /// A simple yes/no confirmation dialog.
@@ -56,7 +56,7 @@ impl ConfirmModal {
         let block = Block::default()
             .title(format!(" {} ", self.title))
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Yellow));
+            .border_style(theme::border_focused());
 
         let inner = block.inner(popup);
         f.render_widget(block, popup);
@@ -71,7 +71,7 @@ impl ConfirmModal {
         f.render_widget(msg, chunks[0]);
 
         let hint = Paragraph::new(Line::from("  [Y] Yes   [N] No"))
-            .style(Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC));
+            .style(theme::hint_text().add_modifier(Modifier::ITALIC));
         f.render_widget(hint, chunks[1]);
     }
 }

@@ -1,13 +1,13 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::Style,
     text::Line,
-    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
+    widgets::{Block, Borders, Clear, List, ListItem, ListState},
     Frame,
 };
 
-use crate::{config::GpioConfig, ui::ModalAction};
+use crate::{config::GpioConfig, ui::{theme, ModalAction}};
 use super::Modal;
 
 // ---------------------------------------------------------------------------
@@ -81,7 +81,7 @@ impl SingleSelectModal {
         let block = Block::default()
             .title(format!(" {} ", self.title))
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Cyan));
+            .border_style(theme::border_normal());
 
         let items: Vec<ListItem> = self
             .items
@@ -91,12 +91,7 @@ impl SingleSelectModal {
 
         let list = List::new(items)
             .block(block)
-            .highlight_style(
-                Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            )
+            .highlight_style(theme::list_selected())
             .highlight_symbol("▶ ");
 
         f.render_stateful_widget(list, popup, &mut self.state);
@@ -189,7 +184,7 @@ impl MultiSelectModal {
         let block = Block::default()
             .title(format!(" {} ", self.title))
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Cyan));
+            .border_style(theme::border_normal());
 
         let items: Vec<ListItem> = self
             .items
@@ -198,7 +193,7 @@ impl MultiSelectModal {
             .map(|(i, s)| {
                 let check = if self.checked[i] { "[x] " } else { "[ ] " };
                 let style = if i == self.cursor {
-                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                    theme::selected_btn()
                 } else {
                     Style::default()
                 };

@@ -1,13 +1,13 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::Style,
     text::Line,
     widgets::{Block, Borders, Clear, Paragraph},
     Frame,
 };
 
-use crate::{config::GpioConfig, ui::ModalAction};
+use crate::{config::GpioConfig, ui::{theme, ModalAction}};
 use super::Modal;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -63,7 +63,8 @@ impl CommandInputModal {
                     (modal, action, false)
                 }
             }
-            KeyCode::Backspace => {
+            // Handle all backspace variants
+            KeyCode::Backspace | KeyCode::Char('\x08') | KeyCode::Char('\x7f') => {
                 match self.active_field {
                     Field::Command => { self.command.pop(); }
                     Field::Timeout => { self.timeout.pop(); }
@@ -74,9 +75,7 @@ impl CommandInputModal {
                 match self.active_field {
                     Field::Command => self.command.push(c),
                     Field::Timeout => {
-                        if c.is_ascii_digit() {
-                            self.timeout.push(c);
-                        }
+                        if c.is_ascii_digit() { self.timeout.push(c); }
                     }
                 }
                 (Some(Modal::CommandInput(self)), None, false)
@@ -92,7 +91,7 @@ impl CommandInputModal {
         let block = Block::default()
             .title(format!(" {} ", self.title))
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Cyan));
+            .border_style(theme::border_normal());
         let inner = block.inner(popup);
         f.render_widget(block, popup);
 
@@ -107,36 +106,36 @@ impl CommandInputModal {
             ])
             .split(inner);
 
-        let active_style = Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD);
-        let inactive_style = Style::default().fg(Color::White);
+        let active_style = theme::input_text();
+        let inactive_style = Style::default().fg(theme::CYAN);
 
-        let cmd_label = if self.active_field == Field::Command {
-            Paragraph::new("Command:").style(active_style)
-        } else {
-            Paragraph::new("Command:").style(inactive_style)
-        };
-        f.render_widget(cmd_label, chunks[0]);
+        let cmd_label_style = if self.active_field == Field::Command { active_style } else { inactive_style };
+        f.render_widget(Paragraph::new("Command:").style(cmd_label_style), chunks[0]);
 
-        let cmd_field = Paragraph::new(format!("> {}_", self.command))
-            .block(Block::default().borders(Borders::BOTTOM))
-            .style(if self.active_field == Field::Command { active_style } else { inactive_style });
-        f.render_widget(cmd_field, chunks[1]);
+        let cmd_field_style = if self.active_field == Field::Command { active_style } else { inactive_style };
+        f.render_widget(
+            Paragraph::new(format!("> {}_", self.command))
+                .block(Block::default().borders(Borders::BOTTOM).border_style(theme::border_normal()))
+                .style(cmd_field_style),
+            chunks[1],
+        );
 
-        let to_label = if self.active_field == Field::Timeout {
-            Paragraph::new("Timeout (s, 0 = none):").style(active_style)
-        } else {
-            Paragraph::new("Timeout (s, 0 = none):").style(inactive_style)
-        };
-        f.render_widget(to_label, chunks[2]);
+        let to_label_style = if self.active_field == Field::Timeout { active_style } else { inactive_style };
+        f.render_widget(Paragraph::new("Timeout (s, 0 = none):").style(to_label_style), chunks[2]);
 
-        let to_field = Paragraph::new(format!("> {}_", self.timeout))
-            .block(Block::default().borders(Borders::BOTTOM))
-            .style(if self.active_field == Field::Timeout { active_style } else { inactive_style });
-        f.render_widget(to_field, chunks[3]);
+        let to_field_style = if self.active_field == Field::Timeout { active_style } else { inactive_style };
+        f.render_widget(
+            Paragraph::new(format!("> {}_", self.timeout))
+                .block(Block::default().borders(Borders::BOTTOM).border_style(theme::border_normal()))
+                .style(to_field_style),
+            chunks[3],
+        );
 
-        let hint = Paragraph::new(Line::from("  Tab: switch field   Enter: confirm   Esc: cancel"))
-            .style(Style::default().fg(Color::DarkGray));
-        f.render_widget(hint, chunks[4]);
+        f.render_widget(
+            Paragraph::new(Line::from("  Tab: switch field   Enter: confirm   Esc: cancel"))
+                .style(theme::hint_text()),
+            chunks[4],
+        );
     }
 }
 

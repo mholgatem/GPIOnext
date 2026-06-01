@@ -2,7 +2,7 @@ use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::Style,
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Tabs},
     Frame,
@@ -11,13 +11,18 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use crate::config::GpioConfig;
+use crate::constants::DEVICE_LIST;
 use crate::ipc_client::{IpcClient, PinState};
 use crate::ui::{
     modals::Modal,
     tabs::{
-        devices::DevicesTab, i2c_settings::I2cSettingsTab, mappings::MappingsTab,
+        devices::DevicesTab,
+        i2c_settings::I2cSettingsTab,
+        mappings::MappingsTab,
         presets_config::PresetsConfigTab,
+        TabHint,
     },
+    theme,
 };
 
 #[derive(Clone, Copy, PartialEq)]
@@ -31,8 +36,8 @@ pub enum TabIndex {
 impl TabIndex {
     pub fn next(self) -> Self {
         match self {
-            Self::Devices => Self::Mappings,
-            Self::Mappings => Self::I2cSettings,
+            Self::Devices     => Self::Mappings,
+            Self::Mappings    => Self::I2cSettings,
             Self::I2cSettings => Self::PresetsConfig,
             Self::PresetsConfig => Self::Devices,
         }
@@ -40,8 +45,8 @@ impl TabIndex {
 
     pub fn prev(self) -> Self {
         match self {
-            Self::Devices => Self::PresetsConfig,
-            Self::Mappings => Self::Devices,
+            Self::Devices     => Self::PresetsConfig,
+            Self::Mappings    => Self::Devices,
             Self::I2cSettings => Self::Mappings,
             Self::PresetsConfig => Self::I2cSettings,
         }
@@ -74,9 +79,9 @@ impl App {
         let pin_state = Arc::new(Mutex::new(PinState::default()));
         IpcClient::start(Arc::clone(&pin_state));
 
-        let devices_tab = DevicesTab::new(&config);
-        let mappings_tab = MappingsTab::new();
-        let i2c_settings_tab = I2cSettingsTab::new(&config);
+        let devices_tab       = DevicesTab::new(&config);
+        let mappings_tab      = MappingsTab::new();
+        let i2c_settings_tab  = I2cSettingsTab::new(&config);
         let presets_config_tab = PresetsConfigTab::new();
 
         Ok(Self {
@@ -101,7 +106,6 @@ impl App {
     }
 
     pub fn tick(&mut self) {
-        // Advance PinCapture hold timer; fire callback when hold is complete.
         if let Some(Modal::PinCapture(ref mut cap)) = self.modal {
             cap.tick(&self.pin_state);
         }
@@ -122,7 +126,6 @@ impl App {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> bool {
-        // Any key press clears the transient status message.
         self.status_msg = None;
 
         // Modal open → route all input there.
@@ -150,15 +153,16 @@ impl App {
                 }
             }
 
-            // ── App-level Enter: Devices tab → navigate to Mappings ──────────
+            // ── Devices tab: Enter or n both navigate to Mappings ─────────────
             KeyCode::Enter if self.tab == TabIndex::Devices => {
-                if let Some(i) = self.devices_tab.state.selected() {
-                    if let Some((device, _)) = self.devices_tab.rows.get(i) {
-                        let device = device.clone();
-                        self.mappings_tab.load_device(&device, &self.config);
-                        self.tab = TabIndex::Mappings;
-                    }
-                }
+                let device = DEVICE_LIST[self.devices_tab.selected].to_owned();
+                self.mappings_tab.set_filter(Some(device));
+                self.tab = TabIndex::Mappings;
+            }
+            KeyCode::Char('n') | KeyCode::Char('N') if self.tab == TabIndex::Devices => {
+                let device = DEVICE_LIST[self.devices_tab.selected].to_owned();
+                self.mappings_tab.set_filter(Some(device));
+                self.tab = TabIndex::Mappings;
             }
 
             // ── Delegate everything else to the active tab ───────────────────
@@ -195,10 +199,12 @@ impl App {
             RefreshDevicesTab => {
                 self.devices_tab = DevicesTab::new(&self.config);
             }
-            // Load the device in the Mappings tab AND switch to it.
             RefreshMappingsTab(device) => {
-                self.mappings_tab.load_device(&device, &self.config);
+                self.mappings_tab.set_filter(Some(device));
                 self.tab = TabIndex::Mappings;
+            }
+            SetMappingsFilter(device) => {
+                self.mappings_tab.set_filter(device);
             }
             DaemonAction(cmd) => {
                 if let Err(e) = crate::init_sys::run_daemon_cmd(cmd) {
@@ -236,9 +242,15 @@ impl App {
             Line::from(" Presets & Config "),
         ];
         let tabs = Tabs::new(titles)
-            .block(Block::default().borders(Borders::ALL).title(" GPIOnext Config "))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(theme::border_normal())
+                    .title(Span::styled(" GPIOnext Config ", theme::tab_active())),
+            )
             .select(self.tab as usize)
-            .highlight_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD));
+            .highlight_style(theme::tab_active())
+            .divider(Span::styled(" | ", theme::hint_text()));
         f.render_widget(tabs, area);
     }
 
@@ -254,34 +266,30 @@ impl App {
     }
 
     fn render_status(&self, f: &mut Frame, area: Rect) {
-        let (text, color) = if let Some(msg) = &self.status_msg {
-            (msg.as_str(), Color::Green)
+        let (text, style) = if let Some(msg) = &self.status_msg {
+            if msg.starts_with("Save failed") || msg.starts_with("Daemon error") {
+                (msg.as_str(), theme::status_err())
+            } else {
+                (msg.as_str(), theme::status_ok())
+            }
         } else {
-            (self.tab_hint(), Color::DarkGray)
+            (self.tab_hint(), theme::hint_text())
         };
 
         let para = Paragraph::new(Line::from(Span::styled(
             format!(" {text}"),
-            Style::default().fg(color),
+            style,
         )))
-        .style(Style::default().bg(Color::Black));
+        .style(Style::default().bg(ratatui::style::Color::Black));
         f.render_widget(para, area);
     }
 
-    fn tab_hint(&self) -> &'static str {
+    fn tab_hint(&self) -> &str {
         match self.tab {
-            TabIndex::Devices => {
-                "n: add device  d: delete  Enter: edit mappings  Tab: next tab  q: quit  s: save"
-            }
-            TabIndex::Mappings => {
-                "n: add mapping  d: delete  c: change device  Tab: next tab  q: quit  s: save"
-            }
-            TabIndex::I2cSettings => {
-                "F1: Settings  F2: I2C chips  F3: Live pins  ↑↓: move  Enter/Space: edit  Tab: next tab"
-            }
-            TabIndex::PresetsConfig => {
-                "↑↓: select preset  Enter: load  e: export  i: import  Tab: focus daemon ctrl  q: quit"
-            }
+            TabIndex::Devices     => self.devices_tab.hint(),
+            TabIndex::Mappings    => self.mappings_tab.hint(),
+            TabIndex::I2cSettings => self.i2c_settings_tab.hint(),
+            TabIndex::PresetsConfig => self.presets_config_tab.hint(),
         }
     }
 }

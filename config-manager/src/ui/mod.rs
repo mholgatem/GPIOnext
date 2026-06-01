@@ -1,6 +1,7 @@
 pub mod live_pin_view;
 pub mod modals;
 pub mod tabs;
+pub mod theme;
 
 pub use modals::Modal;
 
@@ -17,6 +18,8 @@ pub enum ModalAction {
     RefreshDevicesTab,
     /// Load `device` in the Mappings tab and switch to it.
     RefreshMappingsTab(String),
+    /// Set the Mappings tab filter without switching tabs (None = show all).
+    SetMappingsFilter(Option<String>),
     /// Send a lifecycle command to the daemon.
     DaemonAction(DaemonCmd),
 }

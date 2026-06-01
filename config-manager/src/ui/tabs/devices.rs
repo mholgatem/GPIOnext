@@ -1,70 +1,65 @@
-/// Devices tab — lists configured virtual devices with mapping counts.
-/// Keys: n = add new device via wizard, d = delete, Enter = jump to Mappings.
+/// Devices tab — 2×3 grid of device "buttons" for Joypad 1-4, Keyboard, Commands.
+/// Keys: ←→↑↓/hjkl navigate grid; Enter/n = edit mappings for selected; d = delete all.
 
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
-    layout::{Constraint, Rect},
-    style::{Color, Modifier, Style},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    style::Style,
     text::{Line, Span},
-    widgets::{Block, Borders, Cell, Paragraph, Row, Table, TableState},
+    widgets::{Block, Borders, Paragraph},
     Frame,
 };
+use std::collections::HashMap;
 
 use crate::{
     config::{self, GpioConfig},
     constants::DEVICE_LIST,
     ui::{
-        modals::{confirm::ConfirmModal, selection::SingleSelectModal, Modal},
-        ModalAction,
+        modals::{confirm::ConfirmModal, Modal},
+        theme, ModalAction,
     },
 };
+use super::TabHint;
 
 pub struct DevicesTab {
-    /// Rows: (device_name, mapping_count)
-    pub rows: Vec<(String, usize)>,
-    pub state: TableState,
+    /// Index into DEVICE_LIST (0-5) of the currently focused button.
+    pub selected: usize,
 }
 
 impl DevicesTab {
-    pub fn new(cfg: &GpioConfig) -> Self {
-        let rows = build_rows(cfg);
-        let mut state = TableState::default();
-        if !rows.is_empty() {
-            state.select(Some(0));
-        }
-        Self { rows, state }
+    pub fn new(_cfg: &GpioConfig) -> Self {
+        Self { selected: 0 }
     }
 
     pub fn handle_key(&mut self, key: KeyEvent, cfg: &mut GpioConfig) -> Option<Modal> {
         match key.code {
+            KeyCode::Left | KeyCode::Char('h') => {
+                self.selected = (self.selected + 5) % 6;
+                None
+            }
+            KeyCode::Right | KeyCode::Char('l') => {
+                self.selected = (self.selected + 1) % 6;
+                None
+            }
             KeyCode::Up | KeyCode::Char('k') => {
-                let i = self.state.selected().unwrap_or(0);
-                if i > 0 {
-                    self.state.select(Some(i - 1));
-                }
+                self.selected = (self.selected + 3) % 6;
                 None
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                let i = self.state.selected().unwrap_or(0);
-                if i + 1 < self.rows.len() {
-                    self.state.select(Some(i + 1));
-                }
+                self.selected = (self.selected + 3) % 6;
                 None
             }
 
-            // Add new device: pick any slot and navigate to Mappings to add pins.
-            KeyCode::Char('n') | KeyCode::Char('N') => {
-                // Show all devices, including those already configured — user may
-                // want to add more mappings to an existing device.
-                let items: Vec<String> = DEVICE_LIST.iter().map(|&d| d.to_owned()).collect();
-                Some(Modal::SingleSelect(SingleSelectModal::new(
-                    "Select Device",
-                    items,
-                    |idx, _cfg| {
-                        if let Some(i) = idx {
-                            let device = crate::constants::DEVICE_LIST[i].to_owned();
-                            // Switch to Mappings tab with this device loaded.
-                            (None, Some(ModalAction::RefreshMappingsTab(device)))
+            // Delete all mappings for the selected device
+            KeyCode::Char('d') | KeyCode::Delete => {
+                let device = DEVICE_LIST[self.selected].to_owned();
+                Some(Modal::Confirm(ConfirmModal::new(
+                    "Delete Device",
+                    format!("Delete all mappings for '{device}'?"),
+                    move |yes, cfg| {
+                        if yes {
+                            config::delete_device(cfg, &device);
+                            (None, Some(ModalAction::RefreshDevicesTab))
                         } else {
                             (None, None)
                         }
@@ -72,105 +67,101 @@ impl DevicesTab {
                 )))
             }
 
-            // Delete selected device
-            KeyCode::Char('d') | KeyCode::Delete => {
-                if let Some(i) = self.state.selected() {
-                    if let Some((device, _)) = self.rows.get(i) {
-                        let device = device.clone();
-                        return Some(Modal::Confirm(ConfirmModal::new(
-                            "Delete Device",
-                            format!("Delete all mappings for '{device}'?"),
-                            move |yes, cfg| {
-                                if yes {
-                                    config::delete_device(cfg, &device);
-                                    (
-                                        None,
-                                        Some(ModalAction::RefreshDevicesTab),
-                                    )
-                                } else {
-                                    (None, None)
-                                }
-                            },
-                        )));
-                    }
-                }
-                None
-            }
-
             _ => None,
         }
     }
 
-    pub fn render(&mut self, f: &mut Frame, area: Rect, cfg: &GpioConfig) {
-        self.rows = build_rows(cfg);
+    pub fn render(&self, f: &mut Frame, area: Rect, cfg: &GpioConfig) {
+        let counts = build_count_map(cfg);
 
-        // Preserve cursor after config changes
-        if self.rows.is_empty() {
-            self.state.select(None);
-        } else if self.state.selected().is_none() {
-            self.state.select(Some(0));
-        }
+        let outer_block = Block::default()
+            .title(" GPIOnext Devices  [←→↑↓/hjkl] navigate  [Enter/n] edit mappings  [d] delete  [s] save ")
+            .borders(Borders::ALL)
+            .border_style(theme::border_normal());
+        let inner_area = outer_block.inner(area);
+        f.render_widget(outer_block, area);
 
-        let block = Block::default()
-            .title(" Devices  [n] Go to device  [d] Delete all  [Enter] Edit mappings ")
-            .borders(Borders::ALL);
+        let row_areas = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(inner_area);
 
-        if self.rows.is_empty() {
-            let hint = ratatui::widgets::Paragraph::new(vec![
-                Line::from(""),
-                Line::from(Span::styled(
-                    "  No devices configured yet.",
-                    Style::default().fg(Color::DarkGray),
-                )),
-                Line::from(Span::styled(
-                    "  Press [n] to choose a device and start adding mappings.",
-                    Style::default().fg(Color::DarkGray),
-                )),
-                Line::from(Span::styled(
-                    "  Or go to Presets & Config to load a HAT preset.",
-                    Style::default().fg(Color::DarkGray),
-                )),
-            ])
-            .block(block);
-            f.render_widget(hint, area);
-            return;
-        }
-
-        let header = Row::new(vec![
-            Cell::from("Device").style(Style::default().add_modifier(Modifier::BOLD)),
-            Cell::from("Mappings").style(Style::default().add_modifier(Modifier::BOLD)),
-        ])
-        .style(Style::default().fg(Color::Yellow));
-
-        let rows: Vec<Row> = self
-            .rows
-            .iter()
-            .map(|(dev, count)| {
-                Row::new(vec![
-                    Cell::from(dev.as_str()),
-                    Cell::from(count.to_string()),
+        for row_idx in 0..2usize {
+            let col_areas = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Percentage(33),
+                    Constraint::Percentage(33),
+                    Constraint::Percentage(34),
                 ])
-            })
-            .collect();
+                .split(row_areas[row_idx]);
 
-        let table = Table::new(rows, [Constraint::Percentage(70), Constraint::Percentage(30)])
-            .header(header)
-            .block(block)
-            .highlight_style(Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD))
-            .highlight_symbol("▶ ");
+            for col_idx in 0..3usize {
+                let device_idx = row_idx * 3 + col_idx;
+                let device_name = DEVICE_LIST[device_idx];
+                let count = *counts.get(device_name).unwrap_or(&0);
+                let is_selected = self.selected == device_idx;
 
-        f.render_stateful_widget(table, area, &mut self.state);
+                let border_style = if is_selected {
+                    theme::border_focused()
+                } else if count > 0 {
+                    theme::border_normal()
+                } else {
+                    Style::default().fg(theme::DIM)
+                };
+
+                let title_style = if is_selected {
+                    theme::selected_btn()
+                } else if count > 0 {
+                    Style::default().fg(theme::CYAN)
+                } else {
+                    Style::default().fg(theme::DIM)
+                };
+
+                let block = Block::default()
+                    .title(Span::styled(format!(" {} ", device_name), title_style))
+                    .title_alignment(Alignment::Center)
+                    .borders(Borders::ALL)
+                    .border_style(border_style);
+
+                let count_text = match count {
+                    0 => "(no mappings)".to_string(),
+                    1 => "1 mapping".to_string(),
+                    n => format!("{n} mappings"),
+                };
+                let count_style = if is_selected {
+                    theme::selected_btn()
+                } else if count > 0 {
+                    Style::default().fg(theme::CYAN)
+                } else {
+                    theme::hint_text()
+                };
+
+                let para = Paragraph::new(vec![
+                    Line::from(""),
+                    Line::from(Span::styled(count_text, count_style)),
+                ])
+                .alignment(Alignment::Center)
+                .block(block);
+
+                f.render_widget(para, col_areas[col_idx]);
+            }
+        }
     }
 }
 
-fn build_rows(cfg: &GpioConfig) -> Vec<(String, usize)> {
-    let mut result: Vec<(String, usize)> = Vec::new();
+impl TabHint for DevicesTab {
+    fn hint(&self) -> &str {
+        "←→↑↓/hjkl: navigate  Enter/n: edit mappings  d: delete all  s: save  q: quit"
+    }
+}
+
+fn build_count_map(cfg: &GpioConfig) -> HashMap<&'static str, usize> {
+    let mut map: HashMap<&'static str, usize> = HashMap::new();
     for row in &cfg.devices {
-        if let Some((_, count)) = result.iter_mut().find(|(d, _)| d == &row.device) {
-            *count += 1;
-        } else {
-            result.push((row.device.clone(), 1));
+        if let Some(&key) = DEVICE_LIST.iter().find(|&&d| d == row.device.as_str()) {
+            *map.entry(key).or_insert(0) += 1;
         }
     }
-    result
+    map
 }
