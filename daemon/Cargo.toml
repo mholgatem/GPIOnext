@@ -1,0 +1,34 @@
+[package]
+name = "gpionext"
+version = "0.1.0"
+edition = "2021"
+description = "GPIOnext daemon — GPIO to HID, Python-free, for Recalbox/Batocera"
+license = "MIT"
+
+[[bin]]
+name = "gpionext"
+path = "src/main.rs"
+
+[dependencies]
+# Core GPIO/uinput/IPC engine — without Python bindings.
+gpionext-core = { path = "../core", default-features = false }
+
+# JSON config parsing
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+anyhow = "1"
+# libc: unconditional so the crate type-checks on all platforms;
+# actual platform-specific calls are guarded by #[cfg(unix)] in code.
+libc = "0.2"
+
+[features]
+default = ["gpio", "i2c"]
+gpio = ["gpionext-core/gpio"]
+i2c  = ["gpionext-core/i2c"]
+
+[profile.release]
+strip = true
+opt-level = 3
+lto = true
+codegen-units = 1

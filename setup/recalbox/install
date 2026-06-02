@@ -1,0 +1,261 @@
+#!/bin/bash
+# GPIOnext Install — Recalbox
+#
+# Called by: install.sh bootstrap or ./manage install
+# Receives env vars: GPIONEXT_VERSION, GPIONEXT_ARCH, GPIONEXT_INSTALL_PATH, MANAGE_DIR
+#
+# Recalbox uses a read-only root filesystem; /recalbox/share is the writable
+# user data partition. Python is not available — GPIOnext ships as standalone
+# Rust binaries. /recalbox/share is mounted noexec on some versions; both
+# binaries are copied to /tmp at startup to work around this.
+
+set -euo pipefail
+
+. "${MANAGE_DIR}/setup/lib.sh"
+
+BIN_DIR="${GPIONEXT_INSTALL_PATH}/bin"
+PID_FILE="/run/gpionext.pid"
+CUSTOM_SH="/recalbox/share/system/custom.sh"
+ES_CFG_DIR="/recalbox/share/system/.emulationstation"
+ES_CUSTOM_CFG="${ES_CFG_DIR}/es_systems.cfg"
+ROMS_DIR="/recalbox/share/roms/gpionext"
+
+# ---------------------------------------------------------------------------
+# udev rule — DISABLED on Recalbox (read-only /etc; session rules don't persist)
+# Uncomment if your Recalbox build supports persistent udev rules.
+# ---------------------------------------------------------------------------
+# UDEV_RULE="/etc/udev/rules.d/10-gpionext.rules"
+# mkdir -p "$(dirname "$UDEV_RULE")"
+# echo 'KERNEL=="event*", ATTRS{idVendor}=="9999", ATTRS{idProduct}=="8888", MODE:="0644"' \
+#     > "$UDEV_RULE"
+# udevadm control --reload-rules 2>/dev/null || true
+# udevadm trigger 2>/dev/null || true
+
+# ---------------------------------------------------------------------------
+# Platform validation
+# ---------------------------------------------------------------------------
+
+if [ ! -d /recalbox/share ]; then
+    echo -e "${RED}Error: This script is for Recalbox only.${NONE}" >&2
+    exit 1
+fi
+
+echo -e "${CYAN}${BOLD}GPIOnext Installer — Recalbox${NONE}"
+echo -e "Architecture: ${FUSCHIA}$(uname -m)${NONE} → ${GPIONEXT_ARCH}"
+echo
+
+# ---------------------------------------------------------------------------
+# Copy files to install path
+# ---------------------------------------------------------------------------
+
+echo -e "${CYAN}${UNDERLINE}Installing files to ${GPIONEXT_INSTALL_PATH}...${NONE}"
+mkdir -p "${GPIONEXT_INSTALL_PATH}/config"
+echo "recalbox" > "${GPIONEXT_INSTALL_PATH}/PLATFORM"
+
+BINARY_OK=false
+if copy_from_source "$MANAGE_DIR" "$GPIONEXT_INSTALL_PATH"; then
+    BINARY_OK=true
+else
+    echo -e "${FUSCHIA}File copy failed. Place binaries manually at:${NONE}"
+    echo "  ${BIN_DIR}/gpionext"
+    echo "  ${BIN_DIR}/gpionext-config"
+fi
+
+# ---------------------------------------------------------------------------
+# Kernel modules
+# ---------------------------------------------------------------------------
+
+modprobe uinput  2>/dev/null || true
+modprobe evdev   2>/dev/null || true
+modprobe i2c-dev 2>/dev/null || true
+
+# ---------------------------------------------------------------------------
+# I2C boot configuration
+# Recalbox uses /boot/recalbox-user-config.txt for user dtparam overrides.
+# /boot is a FAT partition mounted read-only; remount rw briefly to write.
+# ---------------------------------------------------------------------------
+
+enable_i2c_boot_config() {
+    local BOOT_CFG="$1"
+    local REMOUNTED=false
+    local CHANGED=false
+
+    if ! mount | grep -q ' /boot ' 2>/dev/null; then
+        mount /boot 2>/dev/null || true
+    fi
+    if mount | grep '/boot' | grep -q 'ro[,)]'; then
+        mount -o remount,rw /boot 2>/dev/null && REMOUNTED=true
+    fi
+
+    [ -f "$BOOT_CFG" ] || touch "$BOOT_CFG"
+
+    if ! grep -q 'dtparam=i2c_arm=on' "$BOOT_CFG" 2>/dev/null; then
+        echo 'dtparam=i2c_arm=on' >> "$BOOT_CFG"
+        CHANGED=true
+    fi
+    if ! grep -q 'dtparam=i2c1=on' "$BOOT_CFG" 2>/dev/null; then
+        echo 'dtparam=i2c1=on' >> "$BOOT_CFG"
+        CHANGED=true
+    fi
+
+    $REMOUNTED && mount -o remount,ro /boot 2>/dev/null || true
+
+    if $CHANGED; then
+        echo -e "${GREEN}I2C dtparam lines added to ${BOOT_CFG} — reboot required.${NONE}"
+    else
+        echo -e "${GREEN}I2C already enabled in ${BOOT_CFG}${NONE}"
+    fi
+}
+
+if [ -f /boot/recalbox-user-config.txt ] || mount | grep -q '/boot'; then
+    enable_i2c_boot_config /boot/recalbox-user-config.txt
+elif [ -f /boot/firmware/config.txt ]; then
+    enable_i2c_boot_config /boot/firmware/config.txt
+else
+    echo -e "${FUSCHIA}NOTE: Could not locate boot config. Enable I2C manually:${NONE}"
+    echo "  Add to /boot/recalbox-user-config.txt:"
+    echo "    dtparam=i2c_arm=on"
+    echo "    dtparam=i2c1=on"
+fi
+
+# ---------------------------------------------------------------------------
+# Startup hook in custom.sh (copies binaries to /tmp to bypass noexec)
+# ---------------------------------------------------------------------------
+
+echo -e "${CYAN}${UNDERLINE}Registering startup hook in ${CUSTOM_SH}...${NONE}"
+
+[ -f "$CUSTOM_SH" ] || touch "$CUSTOM_SH"
+chmod 755 "$CUSTOM_SH"
+
+if grep -q '# GPIOnext begin' "$CUSTOM_SH"; then
+    echo "Startup hook already present — updating..."
+    sed -i '/# GPIOnext begin/,/# GPIOnext end/d' "$CUSTOM_SH"
+fi
+
+cat >> "$CUSTOM_SH" << 'HOOKEOF'
+
+# GPIOnext begin
+modprobe uinput  2>/dev/null || true
+modprobe evdev   2>/dev/null || true
+modprobe i2c-dev 2>/dev/null || true
+cp /recalbox/share/system/gpionext/bin/gpionext /tmp/gpionext 2>/dev/null && chmod +x /tmp/gpionext
+cp /recalbox/share/system/gpionext/bin/gpionext-config /tmp/gpionext-config 2>/dev/null && chmod +x /tmp/gpionext-config
+/tmp/gpionext \
+    --config /recalbox/share/system/gpionext/config/gpionext.json \
+    --debounce 1 --combo_delay 50 &
+echo $! > /run/gpionext.pid
+# GPIOnext end
+HOOKEOF
+
+echo -e "${GREEN}Startup hook written.${NONE}"
+
+# ---------------------------------------------------------------------------
+# EmulationStation custom system entry
+# ---------------------------------------------------------------------------
+
+echo -e "${CYAN}${UNDERLINE}Registering GPIOnext in EmulationStation...${NONE}"
+mkdir -p "$ES_CFG_DIR"
+
+ES_BLOCK='<!-- GPIOnext begin -->
+<system>
+  <name>gpionext</name>
+  <fullname>GPIOnext</fullname>
+  <path>/recalbox/share/roms/gpionext</path>
+  <extension>.sh .SH</extension>
+  <command>bash %ROM%</command>
+  <platform>linux</platform>
+  <theme>custom</theme>
+</system>
+<!-- GPIOnext end -->'
+
+if [ ! -f "$ES_CUSTOM_CFG" ]; then
+    printf '<?xml version="1.0"?>\n<systemList>\n%s\n</systemList>\n' "$ES_BLOCK" > "$ES_CUSTOM_CFG"
+elif grep -q '<!-- GPIOnext begin -->' "$ES_CUSTOM_CFG"; then
+    echo "ES system entry already present — skipping."
+else
+    sed -i "s|</systemList>|${ES_BLOCK}\n</systemList>|" "$ES_CUSTOM_CFG"
+fi
+
+echo -e "${GREEN}ES system entry written to ${ES_CUSTOM_CFG}${NONE}"
+
+# ---------------------------------------------------------------------------
+# ROM shortcuts
+# ---------------------------------------------------------------------------
+
+echo -e "${CYAN}${UNDERLINE}Creating EmulationStation ROM shortcuts...${NONE}"
+mkdir -p "$ROMS_DIR"
+
+cat > "${ROMS_DIR}/Start GPIOnext.sh" << 'ROMEOF'
+#!/bin/bash
+modprobe uinput  2>/dev/null || true
+modprobe evdev   2>/dev/null || true
+modprobe i2c-dev 2>/dev/null || true
+cp /recalbox/share/system/gpionext/bin/gpionext /tmp/gpionext 2>/dev/null && chmod +x /tmp/gpionext
+/tmp/gpionext \
+    --config /recalbox/share/system/gpionext/config/gpionext.json \
+    --debounce 1 --combo_delay 50 &
+echo $! > /run/gpionext.pid
+sleep 2
+ROMEOF
+
+cat > "${ROMS_DIR}/Stop GPIOnext.sh" << 'ROMEOF'
+#!/bin/bash
+if [ -f /run/gpionext.pid ]; then
+    kill "$(cat /run/gpionext.pid)" 2>/dev/null || true
+    rm -f /run/gpionext.pid
+fi
+sleep 2
+ROMEOF
+
+cat > "${ROMS_DIR}/Configure GPIOnext.sh" << 'ROMEOF'
+#!/bin/bash
+cp /recalbox/share/system/gpionext/bin/gpionext-config /tmp/gpionext-config 2>/dev/null && chmod +x /tmp/gpionext-config
+/tmp/gpionext-config --config /recalbox/share/system/gpionext/config/gpionext.json
+ROMEOF
+
+cat > "${ROMS_DIR}/Update GPIOnext.sh" << 'ROMEOF'
+#!/bin/bash
+bash /recalbox/share/system/gpionext/manage update
+ROMEOF
+
+cat > "${ROMS_DIR}/Remove GPIOnext.sh" << 'ROMEOF'
+#!/bin/bash
+bash /recalbox/share/system/gpionext/manage remove
+ROMEOF
+
+chmod 755 "${ROMS_DIR}/"*.sh
+echo -e "${GREEN}ROM shortcuts created in ${ROMS_DIR}${NONE}"
+
+# ---------------------------------------------------------------------------
+# Done
+# ---------------------------------------------------------------------------
+
+clear
+echo
+echo -e "${GREEN}${BOLD}GPIOnext installation complete! (Recalbox)${NONE}"
+echo
+echo -e "Install path: ${CYAN}${GPIONEXT_INSTALL_PATH}${NONE}"
+echo -e "Version:      ${CYAN}${GPIONEXT_VERSION}${NONE}"
+echo
+
+if ! $BINARY_OK; then
+    echo -e "${RED}WARNING: Binaries not copied. Place them manually at:${NONE}"
+    echo "  ${BIN_DIR}/gpionext"
+    echo "  ${BIN_DIR}/gpionext-config"
+    echo
+fi
+
+read -rp $'\e[35m\e[4mStart GPIOnext daemon now?\e[0m [Y/N] ' USER_INPUT
+if [[ "$USER_INPUT" =~ ^[Yy] ]]; then
+    cp "${BIN_DIR}/gpionext" /tmp/gpionext 2>/dev/null && chmod +x /tmp/gpionext
+    /tmp/gpionext \
+        --config "${GPIONEXT_INSTALL_PATH}/config/gpionext.json" \
+        --debounce 1 --combo_delay 50 &
+    echo $! > "$PID_FILE"
+    echo -e "${GREEN}GPIOnext started (PID: $(cat "$PID_FILE"))${NONE}"
+fi
+
+echo
+echo -e "Use the ${CYAN}GPIOnext${NONE} system in EmulationStation to configure and control the daemon."
+echo -e "GPIOnext will start automatically on next boot via ${CYAN}${CUSTOM_SH}${NONE}."
+echo

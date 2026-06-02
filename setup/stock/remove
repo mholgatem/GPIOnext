@@ -1,29 +1,30 @@
 #!/bin/bash
-# GPIOnext Removal Script
-# Stops and disables the daemon, removes all installed files.
+# GPIOnext Remove — Stock (Debian / Raspberry Pi OS)
 #
-# Usage: bash /opt/gpionext/remove.sh
+# Called by: ./manage remove [--purge]
+# Receives env vars: GPIONEXT_INSTALL_PATH, GPIONEXT_PURGE, MANAGE_DIR
 
 set -euo pipefail
 
-if [ "$(whoami)" != "root" ]; then
-    sudo bash "$0" "$@"
-    exit $?
-fi
+. "${MANAGE_DIR}/setup/lib.sh"
 
-INSTALL_PATH="/opt/gpionext"
 SERVICE_NAME="gpionext"
 SERVICE_FILE="/lib/systemd/system/${SERVICE_NAME}.service"
 UDEV_RULE="/etc/udev/rules.d/10-gpionext.rules"
 CLI_BIN="/usr/bin/gpionext"
 
-CYAN='\033[36m'
-GREEN='\033[32m'
-RED='\033[31m'
-NONE='\033[00m'
+# ---------------------------------------------------------------------------
+# Platform validation
+# ---------------------------------------------------------------------------
+
+if [ ! -f /etc/debian_version ]; then
+    echo -e "${RED}Error: This script is for Debian / Raspberry Pi OS only.${NONE}" >&2
+    exit 1
+fi
 
 echo
-echo -e "${RED}Removing GPIOnext...${NONE}"
+echo -e "${RED}Removing GPIOnext (Stock)...${NONE}"
+[ "$GPIONEXT_PURGE" = "true" ] && echo -e "${FUSCHIA}--purge: config will also be removed.${NONE}"
 echo
 
 # ---------------------------------------------------------------------------
@@ -41,7 +42,7 @@ if systemctl is-enabled --quiet "$SERVICE_NAME" 2>/dev/null; then
 fi
 
 [ -f "$SERVICE_FILE" ] && rm -f "$SERVICE_FILE"
-systemctl daemon-reload
+systemctl daemon-reload 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
 # Remove udev rule
@@ -60,9 +61,14 @@ udevadm control --reload-rules 2>/dev/null || true
 # Remove install directory
 # ---------------------------------------------------------------------------
 
-if [ -d "$INSTALL_PATH" ]; then
-    echo -e "Removing ${INSTALL_PATH}..."
-    rm -rf "$INSTALL_PATH"
+if [ -d "$GPIONEXT_INSTALL_PATH" ]; then
+    if [ "$GPIONEXT_PURGE" = "true" ]; then
+        echo "Removing ${GPIONEXT_INSTALL_PATH}..."
+        rm -rf "$GPIONEXT_INSTALL_PATH"
+    else
+        echo "Removing binaries (keeping config/)..."
+        find "$GPIONEXT_INSTALL_PATH" -mindepth 1 -maxdepth 1 ! -name "config" -exec rm -rf {} +
+    fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -73,7 +79,7 @@ for rg_file in /etc/rc.local /home/pi/.profile; do
     if [ -f "$rg_file" ] && grep -q "retrogame" "$rg_file"; then
         echo
         echo -e "${CYAN}retrogame detected in ${rg_file}.${NONE}"
-        read -rp "Re-enable retrogame on startup? [y/n] " USER_INPUT
+        read -rp "Re-enable retrogame on startup? [y/N] " USER_INPUT
         if [[ "$USER_INPUT" =~ ^[Yy] ]]; then
             sed -i '/retrogame/s/^: #//' "$rg_file"
             echo -e "${CYAN}retrogame re-enabled.${NONE}"
@@ -83,4 +89,9 @@ for rg_file in /etc/rc.local /home/pi/.profile; do
 done
 
 echo
-echo -e "${GREEN}GPIOnext removed.${NONE}"
+if [ "$GPIONEXT_PURGE" = "true" ]; then
+    echo -e "${GREEN}GPIOnext removed (including config).${NONE}"
+else
+    echo -e "${GREEN}GPIOnext removed. Config preserved at ${GPIONEXT_INSTALL_PATH}/config/${NONE}"
+fi
+echo

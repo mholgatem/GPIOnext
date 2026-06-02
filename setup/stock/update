@@ -1,0 +1,52 @@
+#!/bin/bash
+# GPIOnext Update — Stock (Debian / Raspberry Pi OS)
+#
+# Called by: ./manage update
+# Receives env vars: GPIONEXT_VERSION, GPIONEXT_ARCH, GPIONEXT_INSTALL_PATH, MANAGE_DIR
+
+set -euo pipefail
+
+. "${MANAGE_DIR}/setup/lib.sh"
+
+SERVICE_NAME="gpionext"
+
+# ---------------------------------------------------------------------------
+# Platform validation
+# ---------------------------------------------------------------------------
+
+if [ ! -f /etc/debian_version ]; then
+    echo -e "${RED}Error: This script is for Debian / Raspberry Pi OS only.${NONE}" >&2
+    exit 1
+fi
+
+if [ ! -d "$GPIONEXT_INSTALL_PATH" ]; then
+    echo -e "${RED}Error: GPIOnext is not installed at ${GPIONEXT_INSTALL_PATH}.${NONE}" >&2
+    echo "Run: ./manage install"
+    exit 1
+fi
+
+echo -e "${CYAN}${BOLD}GPIOnext Update — Stock (Debian)${NONE}"
+echo -e "Updating to ${BOLD}${GPIONEXT_VERSION}${NONE}..."
+echo
+
+# ---------------------------------------------------------------------------
+# Download binaries
+# ---------------------------------------------------------------------------
+
+if ! download_tarball "$GPIONEXT_VERSION" "$GPIONEXT_ARCH" "$GPIONEXT_INSTALL_PATH"; then
+    echo -e "${RED}Update failed: could not download binaries.${NONE}" >&2
+    exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# Restart service
+# ---------------------------------------------------------------------------
+
+if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+    echo -e "${CYAN}Restarting ${SERVICE_NAME} service...${NONE}"
+    systemctl restart "$SERVICE_NAME"
+fi
+
+echo
+echo -e "${GREEN}${BOLD}GPIOnext updated to ${GPIONEXT_VERSION}.${NONE}"
+echo

@@ -1,48 +1,51 @@
+/// gpionext_core — hot-path GPIO engine.
+///
+/// When compiled with the `python` feature (default), exposes a PyO3 extension
+/// module (`gpionext_core`) loadable by the Python daemon.
+///
+/// When compiled without `python` (`--no-default-features`), produces a plain
+/// `rlib` that the native Rust `gpionext` daemon binary links against directly.
+///
+/// Public sub-modules are always available regardless of the feature set so that
+/// the daemon can call `bitmask::build_config`, `gpio::GpioLoop::run`, etc.
+#[cfg(feature = "python")]
 use pyo3::prelude::*;
+#[cfg(feature = "python")]
 use pyo3::types::{PyDict, PyList};
-/// gpionext_core — PyO3 extension module
-///
-/// Exposes the following to Python:
-///   - `GpioCore`         : lifecycle manager (start / stop / reload)
-///   - `get_pin_states()` : returns current pressed-pin bitmask (for live UI)
-///   - `version()`        : returns the crate semver string
-///
-/// Python usage:
-/// ```python
-/// import gpionext_core
-/// core = gpionext_core.GpioCore()
-/// core.start(config_dict)   # config_dict loaded from SQLite by SQL.py
-/// # ... daemon sleeps, GPIO events are handled in Rust threads ...
-/// core.reload(new_config_dict)  # called by SIGHUP handler
-/// core.stop()
-/// ```
+
 use std::sync::Arc;
 
-mod bitmask;
-mod gpio;
-mod i2c;
-mod uinput;
+pub mod bitmask;
+pub mod gpio;
+pub mod i2c;
+pub mod ipc;
+pub mod uinput;
 
 use bitmask::{build_config, init_pool, set_config, set_config_arc, EventType, Peripheral};
 
 // ---------------------------------------------------------------------------
-// Module-level functions
+// Module-level functions (Python extension only)
 // ---------------------------------------------------------------------------
 
 /// Returns the semver version string of this compiled extension.
 ///
 /// # Returns
 /// `str` — e.g. `"0.1.0"`
+#[cfg(feature = "python")]
 #[pyfunction]
 fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
+
+/// Also available as a constant for native callers (e.g. daemon status command).
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Returns true when this extension was compiled with I2C driver support.
 ///
 /// The Python UI uses this to warn when I2C chips are configured but the
 /// installed Rust extension was built without the `i2c` feature; in that case
 /// virtual I2C pins can be displayed from SQLite but will never change state.
+#[cfg(feature = "python")]
 #[pyfunction]
 fn i2c_enabled() -> bool {
     cfg!(feature = "i2c")
@@ -54,6 +57,7 @@ fn i2c_enabled() -> bool {
 ///
 /// # Returns
 /// `int` — current bitmask of all 256 potential pins
+#[cfg(feature = "python")]
 #[pyfunction]
 fn get_pin_states(py: Python<'_>) -> PyResult<PyObject> {
     let words = bitmask::current_bitmask();
@@ -77,16 +81,25 @@ fn get_pin_states(py: Python<'_>) -> PyResult<PyObject> {
 
 /// Lifecycle manager for the GPIOnext hot path.
 ///
+/// When the `python` feature is enabled this is exposed as a Python class.
+/// Without the feature it is a plain Rust struct used by the native daemon
+/// (which calls start_native / stop_native instead of the Python-dict methods).
+///
 /// Owns the Rayon thread pool, the GPIO event loop thread,
 /// and the active configuration. All fields are managed internally;
 /// Python only calls `start`, `stop`, and `reload`.
-#[pyclass]
-struct GpioCore {
+#[cfg_attr(feature = "python", pyclass)]
+pub struct GpioCore {
     gpio_loop: Option<gpio::GpioLoop>,
     i2c_threads: Vec<std::thread::JoinHandle<()>>,
-    running: Arc<std::sync::atomic::AtomicBool>,
+    pub running: Arc<std::sync::atomic::AtomicBool>,
 }
 
+// ---------------------------------------------------------------------------
+// Python methods — only compiled with the `python` feature
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "python")]
 #[pymethods]
 impl GpioCore {
     #[new]
@@ -252,6 +265,10 @@ impl GpioCore {
             }
         }
 
+        // Start IPC server so gpionext-config can read live pin states
+        #[cfg(unix)]
+        ipc::start_ipc_server(Arc::clone(&self.running));
+
         Ok(())
     }
 
@@ -410,6 +427,11 @@ impl GpioCore {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Python-only helpers
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "python")]
 fn optional_u8(d: &Bound<'_, PyDict>, key: &str) -> PyResult<Option<u8>> {
     match d.get_item(key)? {
         Some(value) if !value.is_none() => value.extract().map(Some),
@@ -418,7 +440,7 @@ fn optional_u8(d: &Bound<'_, PyDict>, key: &str) -> PyResult<Option<u8>> {
 }
 
 // ---------------------------------------------------------------------------
-// Config parsing helpers
+// Config parsing helpers (Python → Peripheral) — Python extension only
 // ---------------------------------------------------------------------------
 
 /// Parse the Python `peripherals` list from the config dict into typed Rust structs.
@@ -432,6 +454,7 @@ fn optional_u8(d: &Bound<'_, PyDict>, key: &str) -> PyResult<Option<u8>> {
 /// # Errors
 /// Returns `PyValueError` if a peripheral dict is missing required keys or has
 /// an unrecognised type string.
+#[cfg(feature = "python")]
 fn parse_peripherals(config: &Bound<'_, PyDict>) -> PyResult<Vec<Peripheral>> {
     use std::sync::atomic::{AtomicBool, AtomicU64};
 
@@ -543,6 +566,7 @@ fn parse_peripherals(config: &Bound<'_, PyDict>) -> PyResult<Vec<Peripheral>> {
 ///
 /// # Returns
 /// `(evdev_type, evdev_code, press_value)`
+#[cfg(feature = "python")]
 fn parse_axis_command(s: &str, name: &str) -> PyResult<(u32, u32, i32)> {
     // Strip parentheses and split on comma
     let inner = s.trim().trim_start_matches('(').trim_end_matches(')');
@@ -565,9 +589,10 @@ fn parse_axis_command(s: &str, name: &str) -> PyResult<(u32, u32, i32)> {
 }
 
 // ---------------------------------------------------------------------------
-// PyO3 module registration
+// PyO3 module registration (Python extension only)
 // ---------------------------------------------------------------------------
 
+#[cfg(feature = "python")]
 #[pymodule]
 fn gpionext_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(version, m)?)?;

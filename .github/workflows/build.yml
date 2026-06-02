@@ -85,21 +85,58 @@ jobs:
           rm -rf dist/tmp dist/*.whl
           echo "Built: $(ls dist/)"
 
-      - name: Write VERSION file
-        run: echo "${{ steps.version.outputs.VERSION }}" > dist/VERSION
+      - name: Install cross-compilation toolchain for config-manager
+        run: |
+          case "${{ matrix.target }}" in
+            armv7-unknown-linux-gnueabihf)
+              sudo apt-get install -y gcc-arm-linux-gnueabihf ;;
+            aarch64-unknown-linux-gnu)
+              sudo apt-get install -y gcc-aarch64-linux-gnu ;;
+          esac
 
-      - name: Upload artifact
+      - name: Build config-manager and daemon binaries
+        env:
+          CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER: arm-linux-gnueabihf-gcc
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: |
+          # config-manager (no GPIO/I2C needed)
+          cargo build --release -p gpionext-config --target ${{ matrix.target }}
+          cp target/${{ matrix.target }}/release/gpionext-config \
+             dist/gpionext-config-${{ matrix.arch }}
+
+          # daemon (GPIO + I2C; same features as the .so)
+          cargo build --release -p gpionext \
+            --target ${{ matrix.target }} \
+            --no-default-features --features gpio,i2c
+          cp target/${{ matrix.target }}/release/gpionext \
+             dist/gpionext-${{ matrix.arch }}
+
+          echo "Dist: $(ls dist/)"
+
+      - name: Pack release tarball
+        run: |
+          mkdir -p dist/pkg
+          cp dist/gpionext-${{ matrix.arch }}         dist/pkg/gpionext
+          cp dist/gpionext-config-${{ matrix.arch }}  dist/pkg/gpionext-config
+          cp dist/gpionext_core-${{ matrix.arch }}.so dist/pkg/gpionext_core.so
+          echo "${{ steps.version.outputs.VERSION }}" > dist/pkg/VERSION
+          cp manage dist/pkg/manage
+          cp -r setup dist/pkg/setup
+          tar -czf dist/gpionext-${{ matrix.arch }}.tar.gz -C dist/pkg .
+          echo "Tarball contents:"
+          tar -tzf dist/gpionext-${{ matrix.arch }}.tar.gz
+          echo "Size: $(ls -lh dist/gpionext-${{ matrix.arch }}.tar.gz | awk '{print $5}')"
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: gpionext_core-${{ matrix.arch }}
-          path: dist/gpionext_core-${{ matrix.arch }}.so
+          name: gpionext-${{ matrix.arch }}
+          path: dist/gpionext-${{ matrix.arch }}.tar.gz
 
-      - name: Attach binary to GitHub Release
+      - name: Attach binaries to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dist/gpionext_core-${{ matrix.arch }}.so
-            dist/VERSION
+          files: dist/gpionext-${{ matrix.arch }}.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

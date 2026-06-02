@@ -1,0 +1,60 @@
+#!/bin/bash
+# GPIOnext Update — Recalbox
+#
+# Called by: ./manage update
+# Receives env vars: GPIONEXT_VERSION, GPIONEXT_ARCH, GPIONEXT_INSTALL_PATH, MANAGE_DIR
+
+set -euo pipefail
+
+. "${MANAGE_DIR}/setup/lib.sh"
+
+BIN_DIR="${GPIONEXT_INSTALL_PATH}/bin"
+PID_FILE="/run/gpionext.pid"
+
+# ---------------------------------------------------------------------------
+# Platform validation
+# ---------------------------------------------------------------------------
+
+if [ ! -d /recalbox/share ]; then
+    echo -e "${RED}Error: This script is for Recalbox only.${NONE}" >&2
+    exit 1
+fi
+
+if [ ! -d "$GPIONEXT_INSTALL_PATH" ]; then
+    echo -e "${RED}Error: GPIOnext is not installed at ${GPIONEXT_INSTALL_PATH}.${NONE}" >&2
+    echo "Run: ./manage install"
+    exit 1
+fi
+
+echo -e "${CYAN}${BOLD}GPIOnext Update — Recalbox${NONE}"
+echo -e "Updating to ${BOLD}${GPIONEXT_VERSION}${NONE}..."
+echo
+
+# ---------------------------------------------------------------------------
+# Download binaries
+# ---------------------------------------------------------------------------
+
+if ! download_tarball "$GPIONEXT_VERSION" "$GPIONEXT_ARCH" "$GPIONEXT_INSTALL_PATH"; then
+    echo -e "${RED}Update failed: could not download binaries.${NONE}" >&2
+    exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# Restart daemon if currently running
+# ---------------------------------------------------------------------------
+
+if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+    echo -e "${CYAN}Restarting GPIOnext daemon...${NONE}"
+    kill "$(cat "$PID_FILE")" 2>/dev/null || true
+    rm -f "$PID_FILE"
+    cp "${BIN_DIR}/gpionext" /tmp/gpionext 2>/dev/null && chmod +x /tmp/gpionext
+    /tmp/gpionext \
+        --config "${GPIONEXT_INSTALL_PATH}/config/gpionext.json" \
+        --debounce 1 --combo_delay 50 &
+    echo $! > "$PID_FILE"
+    echo -e "${GREEN}Daemon restarted (PID: $(cat "$PID_FILE"))${NONE}"
+fi
+
+echo
+echo -e "${GREEN}${BOLD}GPIOnext updated to ${GPIONEXT_VERSION}.${NONE}"
+echo

@@ -1,0 +1,289 @@
+#!/bin/bash
+# GPIOnext Management Script
+#
+# Run from disk (normal use after install):
+#   ./manage install [--version <version>]
+#   ./manage update  [--version <version>]
+#   ./manage remove  [--purge]
+#
+# Piped from curl (first-time install):
+#   curl -fL https://raw.githubusercontent.com/mholgatem/GPIOnext/main/manage \
+#       | sudo bash -s -- install [--version <version>]
+
+set -euo pipefail
+
+GITHUB_REPO="mholgatem/GPIOnext"
+
+NONE='\033[00m'
+CYAN='\033[36m'
+GREEN='\033[32m'
+RED='\033[31m'
+FUSCHIA='\033[35m'
+BOLD='\033[1m'
+
+# ---------------------------------------------------------------------------
+# Detect execution mode: piped from curl vs run from disk
+# ---------------------------------------------------------------------------
+
+# When piped via `curl | bash -s`, BASH_SOURCE[0] is "bash" or empty —
+# neither is an actual file. When run from disk it resolves to the script path.
+if [[ -f "${BASH_SOURCE[0]:-}" ]]; then
+    PIPED=false
+    MANAGE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+else
+    PIPED=true
+    MANAGE_DIR=""   # set later, after tarball extraction
+fi
+
+# ---------------------------------------------------------------------------
+# Help
+# ---------------------------------------------------------------------------
+
+show_help() {
+    echo
+    echo -e "${BOLD}GPIOnext Management Script${NONE}"
+    echo
+    echo "Usage:"
+    echo "  ./manage install [--version <version>]   Install (latest or specific version)"
+    echo "  ./manage update  [--version <version>]   Update (or downgrade with --version)"
+    echo "  ./manage remove  [--purge]               Remove (--purge also deletes config)"
+    echo
+    echo "Examples:"
+    echo "  ./manage install                         # install latest release"
+    echo "  ./manage install --version v0.3.3        # install specific version"
+    echo "  ./manage install --version 0.3.3         # v prefix optional"
+    echo "  ./manage update                          # update if newer available"
+    echo "  ./manage update  --version v0.4.0        # update or downgrade to version"
+    echo "  ./manage remove                          # remove binaries, keep config/"
+    echo "  ./manage remove  --purge                 # remove everything including config"
+    echo
+    echo "First-time install (curl):"
+    echo "  curl -fL https://raw.githubusercontent.com/mholgatem/GPIOnext/main/manage \\"
+    echo "      | sudo bash -s -- install [--version <version>]"
+    echo
+}
+
+# ---------------------------------------------------------------------------
+# Parse command
+# ---------------------------------------------------------------------------
+
+COMMAND="${1:-}"
+
+# When piped from curl, always treat this as an install regardless of what was passed.
+if $PIPED; then
+    COMMAND="install"
+    shift 2>/dev/null || true   # drop any stray arg so flag parsing stays clean
+else
+    case "$COMMAND" in
+        install|update|remove) shift ;;
+        *) show_help; exit 0 ;;
+    esac
+fi
+
+# ---------------------------------------------------------------------------
+# Parse flags
+# ---------------------------------------------------------------------------
+
+REQUESTED_VERSION=""
+PURGE=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --version)
+            if [[ -n "${2:-}" && "${2:-}" != --* ]]; then
+                REQUESTED_VERSION="$2"
+                shift 2
+            else
+                echo -e "${RED}Error: --version requires a value (e.g. --version v0.3.3).${NONE}" >&2
+                show_help
+                exit 1
+            fi
+            ;;
+        --purge)
+            PURGE=true
+            shift
+            ;;
+        *)
+            echo -e "${RED}Error: Unknown option: $1${NONE}" >&2
+            show_help
+            exit 1
+            ;;
+    esac
+done
+
+# ---------------------------------------------------------------------------
+# Root check
+# ---------------------------------------------------------------------------
+
+if [ "$(whoami)" != "root" ]; then
+    if $PIPED; then
+        echo -e "${RED}Error: Must be run as root.${NONE}" >&2
+        echo "Use: curl -fL <url>/manage | sudo bash -s -- ..."
+        exit 1
+    fi
+    # Reconstruct args and re-exec under sudo
+    ESCALATE_ARGS=("$MANAGE_DIR/manage" "$COMMAND")
+    [ -n "$REQUESTED_VERSION" ] && ESCALATE_ARGS+=(--version "$REQUESTED_VERSION")
+    [ "$PURGE" = "true" ]       && ESCALATE_ARGS+=(--purge)
+    echo "Switching to root..."
+    exec sudo bash "${ESCALATE_ARGS[@]}"
+fi
+
+# ---------------------------------------------------------------------------
+# Platform detection
+# ---------------------------------------------------------------------------
+
+if [ -f /etc/batocera-release ]; then
+    PLATFORM="batocera"
+    INSTALL_PATH="/userdata/system/gpionext"
+elif [ -d /recalbox/share ]; then
+    PLATFORM="recalbox"
+    INSTALL_PATH="/recalbox/share/system/gpionext"
+elif [ -f /etc/debian_version ]; then
+    PLATFORM="stock"
+    INSTALL_PATH="/opt/gpionext"
+else
+    echo -e "${RED}Error: Unsupported platform. Expected Debian/Raspberry Pi OS, Batocera, or Recalbox.${NONE}" >&2
+    exit 1
+fi
+
+echo -e "${CYAN}Platform: ${BOLD}${PLATFORM}${NONE}  ${CYAN}Install path: ${BOLD}${INSTALL_PATH}${NONE}"
+
+# ---------------------------------------------------------------------------
+# Architecture detection
+# ---------------------------------------------------------------------------
+
+case "$(uname -m)" in
+    armv7l|armv6l) ARCH="armv7l"  ;;
+    aarch64)        ARCH="aarch64" ;;
+    x86_64)         ARCH="x86_64"  ;;
+    *)              ARCH="aarch64" ;;
+esac
+
+# ---------------------------------------------------------------------------
+# Version normalization
+# ---------------------------------------------------------------------------
+
+normalize_version() {
+    local V="$1"
+    [[ "${V,,}" == "legacy" ]] && { echo "LEGACY"; return; }
+    V="${V,,}"
+    [[ "$V" =~ ^v ]] || V="v${V}"
+    echo "$V"
+}
+
+fetch_latest_version() {
+    local TAG
+    TAG=$(curl -sf "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" \
+        | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/') || TAG=""
+    if [ -z "$TAG" ]; then
+        echo -e "${RED}Error: Could not determine latest release. Check internet connection.${NONE}" >&2
+        exit 1
+    fi
+    echo "$TAG"
+}
+
+if [ -n "$REQUESTED_VERSION" ]; then
+    GPIONEXT_VERSION=$(normalize_version "$REQUESTED_VERSION")
+else
+    echo -e "${CYAN}Fetching latest release version...${NONE}"
+    GPIONEXT_VERSION=$(fetch_latest_version)
+fi
+
+echo -e "${CYAN}Version: ${BOLD}${GPIONEXT_VERSION}${NONE}  ${CYAN}Arch: ${BOLD}${ARCH}${NONE}"
+
+# ---------------------------------------------------------------------------
+# Piped mode: download tarball and hand off to the platform install script
+# ---------------------------------------------------------------------------
+
+if $PIPED; then
+    EXTRACT_DIR="/tmp/gpionext-install"
+    URL="https://github.com/${GITHUB_REPO}/releases/download/${GPIONEXT_VERSION}/gpionext-${ARCH}.tar.gz"
+
+    echo -e "${CYAN}Downloading ${URL}...${NONE}"
+    rm -rf "$EXTRACT_DIR"
+    mkdir -p "$EXTRACT_DIR"
+
+    if ! curl -fL "$URL" -o /tmp/gpionext-release.tar.gz; then
+        echo -e "${RED}Error: Download failed.${NONE}" >&2
+        exit 1
+    fi
+
+    tar -xzf /tmp/gpionext-release.tar.gz -C "$EXTRACT_DIR"
+    rm -f /tmp/gpionext-release.tar.gz
+    chmod +x "${EXTRACT_DIR}/manage" 2>/dev/null || true
+
+    echo -e "${GREEN}Extracted to ${EXTRACT_DIR}${NONE}"
+    MANAGE_DIR="$EXTRACT_DIR"
+
+    export GPIONEXT_VERSION
+    export GPIONEXT_ARCH="$ARCH"
+    export GPIONEXT_INSTALL_PATH="$INSTALL_PATH"
+    export GPIONEXT_PURGE="false"
+    export MANAGE_DIR
+
+    PLATFORM_SCRIPT="${MANAGE_DIR}/setup/${PLATFORM}/install"
+    if [ ! -f "$PLATFORM_SCRIPT" ]; then
+        echo -e "${RED}Error: Platform script not found: ${PLATFORM_SCRIPT}${NONE}" >&2
+        exit 1
+    fi
+
+    exec bash "$PLATFORM_SCRIPT"
+fi
+
+# ---------------------------------------------------------------------------
+# Normal mode (run from disk)
+# ---------------------------------------------------------------------------
+
+# Update: skip if already on the target version (only when no --version given)
+if [ "$COMMAND" = "update" ] && [ -z "$REQUESTED_VERSION" ]; then
+    INSTALLED_VERSION=""
+    [ -f "${INSTALL_PATH}/VERSION" ] && INSTALLED_VERSION=$(cat "${INSTALL_PATH}/VERSION")
+    if [ -n "$INSTALLED_VERSION" ] && [ "$INSTALLED_VERSION" = "$GPIONEXT_VERSION" ]; then
+        echo -e "${GREEN}Already on the latest version (${GPIONEXT_VERSION}). Nothing to do.${NONE}"
+        exit 0
+    fi
+fi
+
+# LEGACY detection: prompt migration if config.db exists without gpionext.json
+if [ "$COMMAND" = "install" ] || [ "$COMMAND" = "update" ]; then
+    CONFIG_DB="${INSTALL_PATH}/config/config.db"
+    CONFIG_JSON="${INSTALL_PATH}/config/gpionext.json"
+    MIGRATE_SCRIPT="${MANAGE_DIR}/setup/migrate_db_to_json.sh"
+
+    if [ -f "$CONFIG_DB" ] && [ ! -f "$CONFIG_JSON" ]; then
+        echo
+        echo -e "${FUSCHIA}${BOLD}Legacy SQLite config detected (config.db).${NONE}"
+        echo -e "GPIOnext now uses ${CYAN}gpionext.json${NONE} for configuration."
+        read -rp $'\e[35mMigrate config.db → gpionext.json now? [Y/N] ' USER_INPUT
+        if [[ "$USER_INPUT" =~ ^[Yy] ]]; then
+            if [ -f "$MIGRATE_SCRIPT" ]; then
+                bash "$MIGRATE_SCRIPT" "$CONFIG_DB" "$CONFIG_JSON" \
+                    && echo -e "${GREEN}Migration complete.${NONE}" \
+                    || echo -e "${RED}Migration failed. Reconfigure manually after install.${NONE}"
+            else
+                echo -e "${RED}Migration script not found: ${MIGRATE_SCRIPT}${NONE}"
+            fi
+        else
+            echo -e "${FUSCHIA}Skipped. To migrate later:${NONE}"
+            echo "  bash ${MIGRATE_SCRIPT} ${CONFIG_DB} ${CONFIG_JSON}"
+        fi
+        echo
+    fi
+fi
+
+# Delegate to platform script
+PLATFORM_SCRIPT="${MANAGE_DIR}/setup/${PLATFORM}/${COMMAND}"
+
+if [ ! -f "$PLATFORM_SCRIPT" ]; then
+    echo -e "${RED}Error: Platform script not found: ${PLATFORM_SCRIPT}${NONE}" >&2
+    exit 1
+fi
+
+export GPIONEXT_VERSION
+export GPIONEXT_ARCH="$ARCH"
+export GPIONEXT_INSTALL_PATH="$INSTALL_PATH"
+export GPIONEXT_PURGE="$PURGE"
+export MANAGE_DIR
+
+exec bash "$PLATFORM_SCRIPT"
