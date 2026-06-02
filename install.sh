@@ -202,17 +202,17 @@ fi
 
 RELEASE_BASE="https://github.com/${GITHUB_REPO}/releases/download/${VERSION}"
 
-echo -e "${CYAN}Downloading gpionext_core (${ARCH})...${NONE}"
+echo -e "${CYAN}Downloading gpionext binaries (${ARCH})...${NONE}"
 mkdir -p "${INSTALL_PATH}/bin"
-curl -fL "${RELEASE_BASE}/gpionext_core-${ARCH}.so" \
-    -o "${INSTALL_PATH}/bin/gpionext_core.so" \
-    || echo -e "${FUSCHIA}Warning: could not download gpionext_core binary (may build from source).${NONE}"
-
-echo -e "${CYAN}Downloading gpionext-config (${ARCH})...${NONE}"
-curl -fL "${RELEASE_BASE}/gpionext-config-${ARCH}" \
-    -o "${INSTALL_PATH}/bin/gpionext-config" \
-    && chmod +x "${INSTALL_PATH}/bin/gpionext-config" \
-    || echo -e "${FUSCHIA}Warning: could not download gpionext-config binary.${NONE}"
+if curl -fL "${RELEASE_BASE}/gpionext-${ARCH}.tar.gz" -o /tmp/gpionext-bins.tar.gz; then
+    tar -xzf /tmp/gpionext-bins.tar.gz -C "${INSTALL_PATH}/bin"
+    chmod +x "${INSTALL_PATH}/bin/gpionext" \
+             "${INSTALL_PATH}/bin/gpionext-config"
+    rm /tmp/gpionext-bins.tar.gz
+    echo -e "${GREEN}Binaries extracted to ${INSTALL_PATH}/bin${NONE}"
+else
+    echo -e "${FUSCHIA}Warning: could not download gpionext binaries tarball.${NONE}"
+fi
 
 # Symlink config manager into PATH if a writable bin directory exists.
 # /usr/local/bin doesn't exist on Recalbox/Batocera — skip silently there.
