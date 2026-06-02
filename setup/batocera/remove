@@ -1,31 +1,30 @@
 #!/bin/bash
-# GPIOnext Removal Script — Batocera
+# GPIOnext Remove — Batocera
 #
-# Stops the daemon, removes the service, ES config entry, ROM shortcuts,
-# and the install directory.
-#
-# Usage: bash /userdata/system/gpionext/setup/batocera/remove.sh
+# Called by: ./manage remove [--purge]
+# Receives env vars: GPIONEXT_INSTALL_PATH, GPIONEXT_PURGE, MANAGE_DIR
 
 set -euo pipefail
 
-if [ "$(whoami)" != "root" ]; then
-    sudo bash "$0" "$@"
-    exit $?
-fi
+. "${MANAGE_DIR}/setup/lib.sh"
 
-INSTALL_PATH="/userdata/system/gpionext"
 SERVICE_SCRIPT="/userdata/system/services/gpionext"
 ES_CUSTOM_CFG="/userdata/system/configs/emulationstation/es_systems_custom.cfg"
 ROMS_DIR="/userdata/roms/gpionext"
 UDEV_RULE="/etc/udev/rules.d/10-gpionext.rules"
 
-CYAN='\033[36m'
-GREEN='\033[32m'
-RED='\033[31m'
-NONE='\033[00m'
+# ---------------------------------------------------------------------------
+# Platform validation
+# ---------------------------------------------------------------------------
+
+if [ ! -f /etc/batocera-release ]; then
+    echo -e "${RED}Error: This script is for Batocera only.${NONE}" >&2
+    exit 1
+fi
 
 echo
 echo -e "${RED}Removing GPIOnext (Batocera)...${NONE}"
+[ "$GPIONEXT_PURGE" = "true" ] && echo -e "${FUSCHIA}--purge: config will also be removed.${NONE}"
 echo
 
 # ---------------------------------------------------------------------------
@@ -33,7 +32,7 @@ echo
 # ---------------------------------------------------------------------------
 
 if [ -f "$SERVICE_SCRIPT" ]; then
-    echo "Stopping gpionext daemon..."
+    echo "Stopping GPIOnext daemon..."
     bash "$SERVICE_SCRIPT" stop 2>/dev/null || true
 fi
 
@@ -49,7 +48,6 @@ fi
 
 if [ -f "$ES_CUSTOM_CFG" ] && grep -q '<!-- GPIOnext begin -->' "$ES_CUSTOM_CFG"; then
     echo "Removing GPIOnext entry from ${ES_CUSTOM_CFG}..."
-    # Delete lines from <!-- GPIOnext begin --> through <!-- GPIOnext end --> inclusive
     sed -i '/<!-- GPIOnext begin -->/,/<!-- GPIOnext end -->/d' "$ES_CUSTOM_CFG"
 fi
 
@@ -57,13 +55,10 @@ fi
 # Remove ROM shortcuts
 # ---------------------------------------------------------------------------
 
-if [ -d "$ROMS_DIR" ]; then
-    echo -e "Removing ROM shortcuts from ${ROMS_DIR}..."
-    rm -rf "$ROMS_DIR"
-fi
+[ -d "$ROMS_DIR" ] && rm -rf "$ROMS_DIR" && echo "Removed ROM shortcuts: ${ROMS_DIR}"
 
 # ---------------------------------------------------------------------------
-# Remove udev rule (session-only, but clean up anyway)
+# Remove udev rule
 # ---------------------------------------------------------------------------
 
 [ -f "$UDEV_RULE" ] && rm -f "$UDEV_RULE"
@@ -73,10 +68,21 @@ udevadm control --reload-rules 2>/dev/null || true
 # Remove install directory
 # ---------------------------------------------------------------------------
 
-if [ -d "$INSTALL_PATH" ]; then
-    echo -e "Removing ${INSTALL_PATH}..."
-    rm -rf "$INSTALL_PATH"
+if [ -d "$GPIONEXT_INSTALL_PATH" ]; then
+    if [ "$GPIONEXT_PURGE" = "true" ]; then
+        echo "Removing ${GPIONEXT_INSTALL_PATH}..."
+        rm -rf "$GPIONEXT_INSTALL_PATH"
+    else
+        echo "Removing binaries (keeping config/)..."
+        find "$GPIONEXT_INSTALL_PATH" -mindepth 1 -maxdepth 1 ! -name "config" -exec rm -rf {} +
+    fi
 fi
 
 echo
-echo -e "${GREEN}GPIOnext removed. Restart EmulationStation to update the system list.${NONE}"
+if [ "$GPIONEXT_PURGE" = "true" ]; then
+    echo -e "${GREEN}GPIOnext removed (including config). Restart EmulationStation to update the system list.${NONE}"
+else
+    echo -e "${GREEN}GPIOnext removed. Config preserved at ${GPIONEXT_INSTALL_PATH}/config/${NONE}"
+    echo -e "Restart EmulationStation to update the system list."
+fi
+echo

@@ -1,0 +1,59 @@
+#!/bin/bash
+# GPIOnext Update — Batocera
+#
+# Called by: ./manage update
+# Receives env vars: GPIONEXT_VERSION, GPIONEXT_ARCH, GPIONEXT_INSTALL_PATH, MANAGE_DIR
+
+set -euo pipefail
+
+. "${MANAGE_DIR}/setup/lib.sh"
+
+PID_FILE="/run/gpionext.pid"
+SERVICE_SCRIPT="/userdata/system/services/gpionext"
+
+# ---------------------------------------------------------------------------
+# Platform validation
+# ---------------------------------------------------------------------------
+
+if [ ! -f /etc/batocera-release ]; then
+    echo -e "${RED}Error: This script is for Batocera only.${NONE}" >&2
+    exit 1
+fi
+
+if [ ! -d "$GPIONEXT_INSTALL_PATH" ]; then
+    echo -e "${RED}Error: GPIOnext is not installed at ${GPIONEXT_INSTALL_PATH}.${NONE}" >&2
+    echo "Run: ./manage install"
+    exit 1
+fi
+
+echo -e "${CYAN}${BOLD}GPIOnext Update — Batocera${NONE}"
+echo -e "Updating to ${BOLD}${GPIONEXT_VERSION}${NONE}..."
+echo
+
+# ---------------------------------------------------------------------------
+# Download binaries
+# ---------------------------------------------------------------------------
+
+if ! download_tarball "$GPIONEXT_VERSION" "$GPIONEXT_ARCH" "$GPIONEXT_INSTALL_PATH"; then
+    echo -e "${RED}Update failed: could not download binaries.${NONE}" >&2
+    exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# Restart daemon if currently running
+# ---------------------------------------------------------------------------
+
+if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+    echo -e "${CYAN}Restarting GPIOnext daemon...${NONE}"
+    if [ -f "$SERVICE_SCRIPT" ]; then
+        bash "$SERVICE_SCRIPT" stop  2>/dev/null || true
+        bash "$SERVICE_SCRIPT" start 2>/dev/null || true
+    else
+        kill "$(cat "$PID_FILE")" 2>/dev/null || true
+        rm -f "$PID_FILE"
+    fi
+fi
+
+echo
+echo -e "${GREEN}${BOLD}GPIOnext updated to ${GPIONEXT_VERSION}.${NONE}"
+echo

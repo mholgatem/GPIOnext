@@ -1,0 +1,227 @@
+#!/bin/bash
+# GPIOnext Management Script
+#
+# Usage:
+#   ./manage install [--version <version>]   Install GPIOnext (latest or specific version)
+#   ./manage update  [--version <version>]   Update GPIOnext (use --version to downgrade)
+#   ./manage remove  [--purge]               Remove GPIOnext (--purge also removes config)
+
+set -euo pipefail
+
+MANAGE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+GITHUB_REPO="mholgatem/GPIOnext"
+
+NONE='\033[00m'
+CYAN='\033[36m'
+GREEN='\033[32m'
+RED='\033[31m'
+FUSCHIA='\033[35m'
+BOLD='\033[1m'
+
+# ---------------------------------------------------------------------------
+# Help
+# ---------------------------------------------------------------------------
+
+show_help() {
+    echo
+    echo -e "${BOLD}GPIOnext Management Script${NONE}"
+    echo
+    echo "Usage:"
+    echo "  ./manage install [--version <version>]"
+    echo "  ./manage update  [--version <version>]"
+    echo "  ./manage remove  [--purge]"
+    echo
+    echo "Examples:"
+    echo "  ./manage install                       # install latest release"
+    echo "  ./manage install --version v0.3.3      # install specific version"
+    echo "  ./manage install --version 0.3.3       # v prefix optional"
+    echo "  ./manage update                        # update to latest if newer"
+    echo "  ./manage update  --version v0.4.0      # update or downgrade to version"
+    echo "  ./manage remove                        # remove binaries, keep config/"
+    echo "  ./manage remove  --purge               # remove everything including config"
+    echo
+}
+
+# ---------------------------------------------------------------------------
+# Parse command
+# ---------------------------------------------------------------------------
+
+COMMAND="${1:-}"
+case "$COMMAND" in
+    install|update|remove) shift ;;
+    *) show_help; exit 0 ;;
+esac
+
+# ---------------------------------------------------------------------------
+# Parse flags
+# ---------------------------------------------------------------------------
+
+REQUESTED_VERSION=""
+PURGE=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --version)
+            if [[ -n "${2:-}" && "${2:-}" != --* ]]; then
+                REQUESTED_VERSION="$2"
+                shift 2
+            else
+                echo -e "${RED}Error: --version requires a value (e.g. --version v0.3.3).${NONE}" >&2
+                show_help
+                exit 1
+            fi
+            ;;
+        --purge)
+            PURGE=true
+            shift
+            ;;
+        *)
+            echo -e "${RED}Error: Unknown option: $1${NONE}" >&2
+            show_help
+            exit 1
+            ;;
+    esac
+done
+
+# ---------------------------------------------------------------------------
+# Root escalation — reconstruct args so re-exec is faithful
+# ---------------------------------------------------------------------------
+
+if [ "$(whoami)" != "root" ]; then
+    ESCALATE_ARGS=("$MANAGE_DIR/manage" "$COMMAND")
+    [ -n "$REQUESTED_VERSION" ] && ESCALATE_ARGS+=(--version "$REQUESTED_VERSION")
+    [ "$PURGE" = "true" ]       && ESCALATE_ARGS+=(--purge)
+    echo "Switching to root..."
+    exec sudo bash "${ESCALATE_ARGS[@]}"
+fi
+
+# ---------------------------------------------------------------------------
+# Platform detection
+# ---------------------------------------------------------------------------
+
+detect_platform() {
+    if [ -f /etc/batocera-release ]; then
+        PLATFORM="batocera"
+        INSTALL_PATH="/userdata/system/gpionext"
+    elif [ -d /recalbox/share ]; then
+        PLATFORM="recalbox"
+        INSTALL_PATH="/recalbox/share/system/gpionext"
+    elif [ -f /etc/debian_version ]; then
+        PLATFORM="stock"
+        INSTALL_PATH="/opt/gpionext"
+    else
+        echo -e "${RED}Error: Unsupported platform. Expected Debian/Raspberry Pi OS, Batocera, or Recalbox.${NONE}" >&2
+        exit 1
+    fi
+}
+
+detect_platform
+echo -e "${CYAN}Platform: ${BOLD}${PLATFORM}${NONE}  ${CYAN}Install path: ${BOLD}${INSTALL_PATH}${NONE}"
+
+# ---------------------------------------------------------------------------
+# Architecture detection
+# ---------------------------------------------------------------------------
+
+case "$(uname -m)" in
+    armv7l|armv6l) ARCH="armv7l"  ;;
+    aarch64)        ARCH="aarch64" ;;
+    x86_64)         ARCH="x86_64"  ;;
+    *)              ARCH="aarch64" ;;
+esac
+
+# ---------------------------------------------------------------------------
+# Version normalization
+# ---------------------------------------------------------------------------
+
+normalize_version() {
+    local V="$1"
+    if [[ "${V,,}" == "legacy" ]]; then
+        echo "LEGACY"
+        return
+    fi
+    V="${V,,}"
+    [[ "$V" =~ ^v ]] || V="v${V}"
+    echo "$V"
+}
+
+fetch_latest_version() {
+    local TAG
+    TAG=$(curl -sf "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" \
+        | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/') || TAG=""
+    if [ -z "$TAG" ]; then
+        echo -e "${RED}Error: Could not determine latest release. Check internet connection.${NONE}" >&2
+        exit 1
+    fi
+    echo "$TAG"
+}
+
+if [ -n "$REQUESTED_VERSION" ]; then
+    GPIONEXT_VERSION=$(normalize_version "$REQUESTED_VERSION")
+else
+    echo -e "${CYAN}Fetching latest release version...${NONE}"
+    GPIONEXT_VERSION=$(fetch_latest_version)
+fi
+
+echo -e "${CYAN}Version: ${BOLD}${GPIONEXT_VERSION}${NONE}  ${CYAN}Arch: ${BOLD}${ARCH}${NONE}"
+
+# ---------------------------------------------------------------------------
+# Update: skip if already on the target version (only when no --version given)
+# ---------------------------------------------------------------------------
+
+if [ "$COMMAND" = "update" ] && [ -z "$REQUESTED_VERSION" ]; then
+    INSTALLED_VERSION=""
+    [ -f "${INSTALL_PATH}/VERSION" ] && INSTALLED_VERSION=$(cat "${INSTALL_PATH}/VERSION")
+    if [ -n "$INSTALLED_VERSION" ] && [ "$INSTALLED_VERSION" = "$GPIONEXT_VERSION" ]; then
+        echo -e "${GREEN}Already on the latest version (${GPIONEXT_VERSION}). Nothing to do.${NONE}"
+        exit 0
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# LEGACY detection: prompt migration if config.db exists without gpionext.json
+# ---------------------------------------------------------------------------
+
+if [ "$COMMAND" = "install" ] || [ "$COMMAND" = "update" ]; then
+    CONFIG_DB="${INSTALL_PATH}/config/config.db"
+    CONFIG_JSON="${INSTALL_PATH}/config/gpionext.json"
+    MIGRATE_SCRIPT="${MANAGE_DIR}/setup/migrate_db_to_json.sh"
+
+    if [ -f "$CONFIG_DB" ] && [ ! -f "$CONFIG_JSON" ]; then
+        echo
+        echo -e "${FUSCHIA}${BOLD}Legacy SQLite config detected (config.db).${NONE}"
+        echo -e "GPIOnext now uses ${CYAN}gpionext.json${NONE} for configuration."
+        read -rp $'\e[35mMigrate config.db → gpionext.json now? [Y/N] ' USER_INPUT
+        if [[ "$USER_INPUT" =~ ^[Yy] ]]; then
+            if [ -f "$MIGRATE_SCRIPT" ]; then
+                bash "$MIGRATE_SCRIPT" "$CONFIG_DB" "$CONFIG_JSON" \
+                    && echo -e "${GREEN}Migration complete.${NONE}" \
+                    || echo -e "${RED}Migration failed. Reconfigure manually after install.${NONE}"
+            else
+                echo -e "${RED}Migration script not found: ${MIGRATE_SCRIPT}${NONE}"
+            fi
+        else
+            echo -e "${FUSCHIA}Skipped. To migrate later:${NONE}"
+            echo "  bash ${MIGRATE_SCRIPT} ${CONFIG_DB} ${CONFIG_JSON}"
+        fi
+        echo
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# Delegate to platform script
+# ---------------------------------------------------------------------------
+
+PLATFORM_SCRIPT="${MANAGE_DIR}/setup/${PLATFORM}/${COMMAND}"
+
+if [ ! -f "$PLATFORM_SCRIPT" ]; then
+    echo -e "${RED}Error: Platform script not found: ${PLATFORM_SCRIPT}${NONE}" >&2
+    exit 1
+fi
+
+export GPIONEXT_VERSION
+export GPIONEXT_ARCH="$ARCH"
+export GPIONEXT_INSTALL_PATH="$INSTALL_PATH"
+export GPIONEXT_PURGE="$PURGE"
+export MANAGE_DIR
+
+exec bash "$PLATFORM_SCRIPT"

@@ -1,32 +1,31 @@
 #!/bin/bash
-# GPIOnext Removal Script — Recalbox
+# GPIOnext Remove — Recalbox
 #
-# Stops the daemon, removes the startup hook, ES config entry, ROM shortcuts,
-# and the install directory.
-#
-# Usage: bash /recalbox/share/system/gpionext/setup/recalbox/remove.sh
+# Called by: ./manage remove [--purge]
+# Receives env vars: GPIONEXT_INSTALL_PATH, GPIONEXT_PURGE, MANAGE_DIR
 
 set -euo pipefail
 
-if [ "$(whoami)" != "root" ]; then
-    sudo bash "$0" "$@"
-    exit $?
-fi
+. "${MANAGE_DIR}/setup/lib.sh"
 
-INSTALL_PATH="/recalbox/share/system/gpionext"
 PID_FILE="/run/gpionext.pid"
 CUSTOM_SH="/recalbox/share/system/custom.sh"
 ES_CUSTOM_CFG="/recalbox/share/system/.emulationstation/es_systems.cfg"
 ROMS_DIR="/recalbox/share/roms/gpionext"
 UDEV_RULE="/etc/udev/rules.d/10-gpionext.rules"
 
-CYAN='\033[36m'
-GREEN='\033[32m'
-RED='\033[31m'
-NONE='\033[00m'
+# ---------------------------------------------------------------------------
+# Platform validation
+# ---------------------------------------------------------------------------
+
+if [ ! -d /recalbox/share ]; then
+    echo -e "${RED}Error: This script is for Recalbox only.${NONE}" >&2
+    exit 1
+fi
 
 echo
 echo -e "${RED}Removing GPIOnext (Recalbox)...${NONE}"
+[ "$GPIONEXT_PURGE" = "true" ] && echo -e "${FUSCHIA}--purge: config will also be removed.${NONE}"
 echo
 
 # ---------------------------------------------------------------------------
@@ -34,12 +33,11 @@ echo
 # ---------------------------------------------------------------------------
 
 if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
-    echo "Stopping gpionext daemon..."
+    echo "Stopping GPIOnext daemon..."
     kill "$(cat "$PID_FILE")" 2>/dev/null || true
     rm -f "$PID_FILE"
 else
-    # Fallback: kill by process name
-    pkill -f 'gpionext.py' 2>/dev/null || true
+    pkill -f '/tmp/gpionext' 2>/dev/null || true
 fi
 
 # ---------------------------------------------------------------------------
@@ -64,13 +62,10 @@ fi
 # Remove ROM shortcuts
 # ---------------------------------------------------------------------------
 
-if [ -d "$ROMS_DIR" ]; then
-    echo -e "Removing ROM shortcuts from ${ROMS_DIR}..."
-    rm -rf "$ROMS_DIR"
-fi
+[ -d "$ROMS_DIR" ] && rm -rf "$ROMS_DIR" && echo "Removed ROM shortcuts: ${ROMS_DIR}"
 
 # ---------------------------------------------------------------------------
-# Remove udev rule
+# Remove udev rule (may not exist on Recalbox)
 # ---------------------------------------------------------------------------
 
 [ -f "$UDEV_RULE" ] && rm -f "$UDEV_RULE"
@@ -80,10 +75,21 @@ udevadm control --reload-rules 2>/dev/null || true
 # Remove install directory
 # ---------------------------------------------------------------------------
 
-if [ -d "$INSTALL_PATH" ]; then
-    echo -e "Removing ${INSTALL_PATH}..."
-    rm -rf "$INSTALL_PATH"
+if [ -d "$GPIONEXT_INSTALL_PATH" ]; then
+    if [ "$GPIONEXT_PURGE" = "true" ]; then
+        echo "Removing ${GPIONEXT_INSTALL_PATH}..."
+        rm -rf "$GPIONEXT_INSTALL_PATH"
+    else
+        echo "Removing binaries (keeping config/)..."
+        find "$GPIONEXT_INSTALL_PATH" -mindepth 1 -maxdepth 1 ! -name "config" -exec rm -rf {} +
+    fi
 fi
 
 echo
-echo -e "${GREEN}GPIOnext removed. Restart EmulationStation to update the system list.${NONE}"
+if [ "$GPIONEXT_PURGE" = "true" ]; then
+    echo -e "${GREEN}GPIOnext removed (including config). Restart EmulationStation to update the system list.${NONE}"
+else
+    echo -e "${GREEN}GPIOnext removed. Config preserved at ${GPIONEXT_INSTALL_PATH}/config/${NONE}"
+    echo "Restart EmulationStation to update the system list."
+fi
+echo

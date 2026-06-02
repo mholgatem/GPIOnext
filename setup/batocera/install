@@ -1,0 +1,164 @@
+#!/bin/bash
+# GPIOnext Install — Batocera
+#
+# Called by: ./manage install
+# Receives env vars: GPIONEXT_VERSION, GPIONEXT_ARCH, GPIONEXT_INSTALL_PATH, MANAGE_DIR
+#
+# Batocera uses a read-only squashfs root with a /userdata writable overlay.
+# systemd is not available; startup is handled via /userdata/system/services/.
+
+set -euo pipefail
+
+. "${MANAGE_DIR}/setup/lib.sh"
+
+SERVICE_SCRIPT="/userdata/system/services/gpionext"
+ES_CUSTOM_CFG="/userdata/system/configs/emulationstation/es_systems_custom.cfg"
+ROMS_DIR="/userdata/roms/gpionext"
+UDEV_RULE="/etc/udev/rules.d/10-gpionext.rules"
+PID_FILE="/run/gpionext.pid"
+
+# ---------------------------------------------------------------------------
+# Platform validation
+# ---------------------------------------------------------------------------
+
+if [ ! -f /etc/batocera-release ]; then
+    echo -e "${RED}Error: This script is for Batocera only.${NONE}" >&2
+    exit 1
+fi
+
+echo -e "${CYAN}${BOLD}GPIOnext Installer — Batocera${NONE}"
+echo
+
+# ---------------------------------------------------------------------------
+# Directory structure
+# ---------------------------------------------------------------------------
+
+echo -e "${CYAN}${UNDERLINE}Setting up ${GPIONEXT_INSTALL_PATH}...${NONE}"
+mkdir -p "${GPIONEXT_INSTALL_PATH}/config" "${GPIONEXT_INSTALL_PATH}/bin"
+echo "batocera" > "${GPIONEXT_INSTALL_PATH}/PLATFORM"
+
+# ---------------------------------------------------------------------------
+# Download binaries
+# ---------------------------------------------------------------------------
+
+echo -e "${CYAN}${UNDERLINE}Downloading GPIOnext binaries (${GPIONEXT_VERSION} / ${GPIONEXT_ARCH})...${NONE}"
+if ! download_tarball "$GPIONEXT_VERSION" "$GPIONEXT_ARCH" "$GPIONEXT_INSTALL_PATH"; then
+    echo -e "${FUSCHIA}Warning: Binary download failed. Place binaries manually at:${NONE}"
+    echo "  ${GPIONEXT_INSTALL_PATH}/bin/gpionext"
+    echo "  ${GPIONEXT_INSTALL_PATH}/bin/gpionext-config"
+fi
+
+# ---------------------------------------------------------------------------
+# Kernel modules
+# ---------------------------------------------------------------------------
+
+modprobe uinput  2>/dev/null || true
+modprobe evdev   2>/dev/null || true
+modprobe i2c-dev 2>/dev/null || true
+
+# ---------------------------------------------------------------------------
+# udev rule (session-only on Batocera — /etc is a tmpfs overlay)
+# ---------------------------------------------------------------------------
+
+echo -e "${CYAN}${UNDERLINE}Installing udev rule (session-only on Batocera)...${NONE}"
+mkdir -p "$(dirname "$UDEV_RULE")"
+echo 'KERNEL=="event*", ATTRS{idVendor}=="9999", ATTRS{idProduct}=="8888", MODE:="0644"' \
+    > "$UDEV_RULE"
+udevadm control --reload-rules 2>/dev/null || true
+udevadm trigger 2>/dev/null || true
+
+# ---------------------------------------------------------------------------
+# Batocera service daemon
+# ---------------------------------------------------------------------------
+
+echo -e "${CYAN}${UNDERLINE}Installing Batocera service...${NONE}"
+if [ -f "${MANAGE_DIR}/setup/batocera/gpionext-service" ]; then
+    install -m 755 "${MANAGE_DIR}/setup/batocera/gpionext-service" "$SERVICE_SCRIPT"
+    echo -e "${GREEN}Service installed to ${SERVICE_SCRIPT}${NONE}"
+else
+    echo -e "${FUSCHIA}Warning: gpionext-service not found. Service not installed.${NONE}"
+fi
+
+# ---------------------------------------------------------------------------
+# EmulationStation custom system entry
+# ---------------------------------------------------------------------------
+
+echo -e "${CYAN}${UNDERLINE}Registering GPIOnext in EmulationStation...${NONE}"
+mkdir -p "$(dirname "$ES_CUSTOM_CFG")"
+
+ES_BLOCK='<!-- GPIOnext begin -->
+<system>
+  <name>gpionext</name>
+  <fullname>GPIOnext</fullname>
+  <path>/userdata/roms/gpionext</path>
+  <extension>.sh .SH</extension>
+  <command>bash %ROM%</command>
+  <platform>linux</platform>
+  <theme>custom</theme>
+</system>
+<!-- GPIOnext end -->'
+
+if [ ! -f "$ES_CUSTOM_CFG" ]; then
+    printf '<?xml version="1.0"?>\n<systemList>\n%s\n</systemList>\n' "$ES_BLOCK" > "$ES_CUSTOM_CFG"
+elif grep -q '<!-- GPIOnext begin -->' "$ES_CUSTOM_CFG"; then
+    echo "ES system entry already present — skipping."
+else
+    sed -i "s|</systemList>|${ES_BLOCK}\n</systemList>|" "$ES_CUSTOM_CFG"
+fi
+
+echo -e "${GREEN}ES system entry written to ${ES_CUSTOM_CFG}${NONE}"
+
+# ---------------------------------------------------------------------------
+# ROM shortcuts
+# ---------------------------------------------------------------------------
+
+echo -e "${CYAN}${UNDERLINE}Creating EmulationStation ROM shortcuts...${NONE}"
+mkdir -p "$ROMS_DIR"
+
+cat > "${ROMS_DIR}/Start GPIOnext.sh" << 'ROMEOF'
+#!/bin/bash
+bash /userdata/system/services/gpionext start
+sleep 2
+ROMEOF
+
+cat > "${ROMS_DIR}/Stop GPIOnext.sh" << 'ROMEOF'
+#!/bin/bash
+bash /userdata/system/services/gpionext stop
+sleep 2
+ROMEOF
+
+cat > "${ROMS_DIR}/Configure GPIOnext.sh" << ROMEOF
+#!/bin/bash
+/userdata/system/gpionext/bin/gpionext-config --config /userdata/system/gpionext/config/gpionext.json
+ROMEOF
+
+cat > "${ROMS_DIR}/Update GPIOnext.sh" << ROMEOF
+#!/bin/bash
+bash /userdata/system/gpionext/manage update
+ROMEOF
+
+cat > "${ROMS_DIR}/Remove GPIOnext.sh" << ROMEOF
+#!/bin/bash
+bash /userdata/system/gpionext/manage remove
+ROMEOF
+
+chmod 755 "${ROMS_DIR}/"*.sh
+echo -e "${GREEN}ROM shortcuts created in ${ROMS_DIR}${NONE}"
+
+# ---------------------------------------------------------------------------
+# Done
+# ---------------------------------------------------------------------------
+
+clear
+echo
+echo -e "${GREEN}${BOLD}GPIOnext installation complete! (Batocera)${NONE}"
+echo
+echo -e "Install path: ${CYAN}${GPIONEXT_INSTALL_PATH}${NONE}"
+echo -e "Version:      ${CYAN}${GPIONEXT_VERSION}${NONE}"
+echo
+echo -e "Use the ${CYAN}GPIOnext${NONE} system in EmulationStation to control the daemon."
+echo -e "Or run: ${CYAN}bash ${SERVICE_SCRIPT} start|stop|status${NONE}"
+echo
+echo -e "${FUSCHIA}Note: Restart EmulationStation and reboot to fully activate.${NONE}"
+echo -e "Run ${CYAN}Configure GPIOnext${NONE} from the GPIOnext ES system to set up your buttons."
+echo
