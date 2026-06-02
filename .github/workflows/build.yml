@@ -120,8 +120,12 @@ jobs:
           cp dist/gpionext-config-${{ matrix.arch }}  dist/pkg/gpionext-config
           cp dist/gpionext_core-${{ matrix.arch }}.so dist/pkg/gpionext_core.so
           echo "${{ steps.version.outputs.VERSION }}" > dist/pkg/VERSION
+          cp manage dist/pkg/manage
+          cp -r setup dist/pkg/setup
           tar -czf dist/gpionext-${{ matrix.arch }}.tar.gz -C dist/pkg .
-          echo "Tarball: $(ls -lh dist/gpionext-${{ matrix.arch }}.tar.gz)"
+          echo "Tarball contents:"
+          tar -tzf dist/gpionext-${{ matrix.arch }}.tar.gz
+          echo "Size: $(ls -lh dist/gpionext-${{ matrix.arch }}.tar.gz | awk '{print $5}')"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

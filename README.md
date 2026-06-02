@@ -28,20 +28,21 @@ This is a fully featured GPIO to HID controller Daemon that is fully compatible 
 The easiest way to install GPIOnext is to use our bootstrap installer. This will download the latest release and handle all dependencies automatically.
 
 ### Latest Version (Recommended)
+(root required):
 ```bash
-curl -fL https://raw.githubusercontent.com/mholgatem/GPIOnext/main/install.sh | sudo bash
+curl -fL https://raw.githubusercontent.com/mholgatem/GPIOnext/main/manage | bash
 ```
 
 ### Specific Version
-If you need to install a specific version:
+If you need to install a specific version (root required):
 ```bash
-curl -fL https://raw.githubusercontent.com/mholgatem/GPIOnext/main/install.sh | sudo bash -s -- --version v0.1.0
+curl -fL https://raw.githubusercontent.com/mholgatem/GPIOnext/main/install.sh | bash -s -- install --version v0.1.0
 ```
 
-### Legacy Version
+### Legacy Version (not compatible with recalBox/batocera)
 To install the original Python-only implementation:
 ```bash
-curl -fL https://raw.githubusercontent.com/mholgatem/GPIOnext/main/install.sh | sudo bash -s -- --version LEGACY
+curl -fL https://raw.githubusercontent.com/mholgatem/GPIOnext/refs/heads/Legacy-Code/install.sh | sudo bash
 ```
 
 ---

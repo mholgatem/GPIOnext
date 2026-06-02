@@ -1,7 +1,7 @@
 #!/bin/bash
 # GPIOnext Install — Recalbox
 #
-# Called by: ./manage install
+# Called by: install.sh bootstrap or ./manage install
 # Receives env vars: GPIONEXT_VERSION, GPIONEXT_ARCH, GPIONEXT_INSTALL_PATH, MANAGE_DIR
 #
 # Recalbox uses a read-only root filesystem; /recalbox/share is the writable
@@ -45,23 +45,18 @@ echo -e "Architecture: ${FUSCHIA}$(uname -m)${NONE} → ${GPIONEXT_ARCH}"
 echo
 
 # ---------------------------------------------------------------------------
-# Directory structure
+# Copy files to install path
 # ---------------------------------------------------------------------------
 
-echo -e "${CYAN}${UNDERLINE}Setting up ${GPIONEXT_INSTALL_PATH}...${NONE}"
-mkdir -p "${GPIONEXT_INSTALL_PATH}/config" "$BIN_DIR"
+echo -e "${CYAN}${UNDERLINE}Installing files to ${GPIONEXT_INSTALL_PATH}...${NONE}"
+mkdir -p "${GPIONEXT_INSTALL_PATH}/config"
 echo "recalbox" > "${GPIONEXT_INSTALL_PATH}/PLATFORM"
 
-# ---------------------------------------------------------------------------
-# Download binaries
-# ---------------------------------------------------------------------------
-
-echo -e "${CYAN}${UNDERLINE}Downloading GPIOnext binaries (${GPIONEXT_VERSION} / ${GPIONEXT_ARCH})...${NONE}"
 BINARY_OK=false
-if download_tarball "$GPIONEXT_VERSION" "$GPIONEXT_ARCH" "$GPIONEXT_INSTALL_PATH"; then
+if copy_from_source "$MANAGE_DIR" "$GPIONEXT_INSTALL_PATH"; then
     BINARY_OK=true
 else
-    echo -e "${FUSCHIA}Binary download failed. Place binaries manually at:${NONE}"
+    echo -e "${FUSCHIA}File copy failed. Place binaries manually at:${NONE}"
     echo "  ${BIN_DIR}/gpionext"
     echo "  ${BIN_DIR}/gpionext-config"
 fi
@@ -244,7 +239,7 @@ echo -e "Version:      ${CYAN}${GPIONEXT_VERSION}${NONE}"
 echo
 
 if ! $BINARY_OK; then
-    echo -e "${RED}WARNING: Binaries not downloaded. Place them manually at:${NONE}"
+    echo -e "${RED}WARNING: Binaries not copied. Place them manually at:${NONE}"
     echo "  ${BIN_DIR}/gpionext"
     echo "  ${BIN_DIR}/gpionext-config"
     echo
