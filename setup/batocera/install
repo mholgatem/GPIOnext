@@ -94,7 +94,14 @@ if [ ! -f "$ES_CUSTOM_CFG" ]; then
 elif grep -q '<!-- GPIOnext begin -->' "$ES_CUSTOM_CFG"; then
     echo "ES system entry already present — skipping."
 else
-    sed -i "s|</systemList>|${ES_BLOCK}\n</systemList>|" "$ES_CUSTOM_CFG"
+    TMPFILE=$(mktemp)
+    while IFS= read -r line; do
+        if echo "$line" | grep -qF '</systemList>'; then
+            printf '%s\n' "$ES_BLOCK"
+        fi
+        printf '%s\n' "$line"
+    done < "$ES_CUSTOM_CFG" > "$TMPFILE"
+    mv "$TMPFILE" "$ES_CUSTOM_CFG"
 fi
 
 echo -e "${GREEN}ES system entry written to ${ES_CUSTOM_CFG}${NONE}"
