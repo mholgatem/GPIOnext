@@ -252,12 +252,12 @@ fi
 # udev rule (SDL2 / emulator compatibility)
 # ---------------------------------------------------------------------------
 
-echo -e "${CYAN}${UNDERLINE}Installing udev rule...${NONE}"
-mkdir -p "$(dirname "$UDEV_RULE")"
-echo 'KERNEL=="event*", ATTRS{idVendor}=="9999", ATTRS{idProduct}=="8888", MODE:="0644"' \
-    > "$UDEV_RULE"
-udevadm control --reload-rules 2>/dev/null || true
-udevadm trigger 2>/dev/null || true
+#echo -e "${CYAN}${UNDERLINE}Installing udev rule...${NONE}"
+#mkdir -p "$(dirname "$UDEV_RULE")"
+#echo 'KERNEL=="event*", ATTRS{idVendor}=="9999", ATTRS{idProduct}=="8888", MODE:="0644"' \
+#    > "$UDEV_RULE"
+#udevadm control --reload-rules 2>/dev/null || true
+#udevadm trigger 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
 # Startup hook in custom.sh
@@ -330,6 +330,9 @@ mkdir -p "$ROMS_DIR"
 
 cat > "${ROMS_DIR}/Start GPIOnext.sh" << 'ROMEOF'
 #!/bin/bash
+modprobe uinput  2>/dev/null || true
+modprobe evdev   2>/dev/null || true
+modprobe i2c-dev 2>/dev/null || true
 cp /recalbox/share/system/gpionext/bin/gpionext /tmp/gpionext 2>/dev/null && chmod +x /tmp/gpionext
 /tmp/gpionext \
     --config /recalbox/share/system/gpionext/config/gpionext.json \
