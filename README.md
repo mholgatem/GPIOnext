@@ -1,7 +1,9 @@
 # GPIOnext+
 
+[![GitHub All Releases](https://img.shields.io/github/downloads/mholgatem/GPIOnext/total?style=for-the-badge&logo=github&label=TOTAL%20DOWNLOADS&labelColor=220033&color=ff00cc&logoColor=ff00cc)](https://github.com/mholgatem/GPIOnext/releases)
+[![Latest Release Downloads](https://img.shields.io/github/downloads/mholgatem/GPIOnext/latest/total?style=for-the-badge&logo=github&label=LATEST%20RELEASE&labelColor=001f3f&color=00ffff&logoColor=ff00cc)](https://github.com/mholgatem/GPIOnext/releases/latest)
 
----
+
 ### Pardon Our Dust!
 While the base code works, I am currently testing the installer/updater and various system configurations (Pi3/4/5, Buster/Bullseye/Bookworm, 32bit/64bit). This takes a bit of time, but I'm working hard to get through all of the testing as quickly as possible. In the meantime, the legacy code is still available. If you have problems with the installer, you should be able to clone the Legacy-Code branch to /opt/gpionext, then run the setup.sh script.
 
