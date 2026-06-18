@@ -19,10 +19,14 @@ const HOLD_DURATION: Duration = Duration::from_millis(1000);
 /// Modal for capturing GPIO pin(s) by physically holding them for 1 second.
 ///
 /// Requires a connected daemon. Esc skips (calls on_capture with None).
+/// When created with `.wait_for_release()`, the hold timer only starts after
+/// all pins are released — prevents auto-capture when chaining dpad modals.
 pub struct PinCaptureModal {
     pub title: String,
     pub hold_pins: Option<Vec<u8>>,
     hold_since: Option<Instant>,
+    /// When true, ignore held pins until the user fully releases them first.
+    waiting_for_release: bool,
     pub on_capture: Box<dyn FnOnce(Option<Vec<u8>>, &mut GpioConfig) -> (Option<Modal>, Option<ModalAction>)>,
 }
 
@@ -35,8 +39,17 @@ impl PinCaptureModal {
             title: title.into(),
             hold_pins: None,
             hold_since: None,
+            waiting_for_release: false,
             on_capture: Box::new(on_capture),
         }
+    }
+
+    /// Require the user to release all pins before the hold timer can start.
+    /// Call this when chaining successive pin captures to prevent accidental
+    /// immediate capture of the same pins from the previous step.
+    pub fn wait_for_release(mut self) -> Self {
+        self.waiting_for_release = true;
+        self
     }
 
     pub fn handle_key(
@@ -66,6 +79,11 @@ impl PinCaptureModal {
         if pressed.is_empty() {
             self.hold_pins = None;
             self.hold_since = None;
+            self.waiting_for_release = false;
+            return;
+        }
+
+        if self.waiting_for_release {
             return;
         }
 
@@ -94,7 +112,10 @@ impl PinCaptureModal {
         f.render_widget(Clear, popup);
 
         let block = Block::default()
-            .title(format!(" {} ", self.title))
+            .title(Span::styled(
+                format!(" {} ", self.title),
+                Style::default().fg(Color::White),
+            ))
             .borders(Borders::ALL)
             .border_style(theme::border_focused());
 
@@ -111,7 +132,7 @@ impl PinCaptureModal {
             .constraints([
                 Constraint::Length(1), // daemon status
                 Constraint::Length(1), // separator
-                Constraint::Length(1), // live pins
+                Constraint::Length(1), // live pins / release prompt
                 Constraint::Length(1), // hold gauge
                 Constraint::Min(0),    // esc hint
             ])
@@ -119,7 +140,7 @@ impl PinCaptureModal {
 
         // ── Daemon status ────────────────────────────────────────────────────
         let (status_text, status_color) = if connected {
-            ("● Daemon connected — hold pin(s) for 1 second to capture", Color::LightGreen)
+            ("● Daemon connected — hold pin(s) for 1 second to capture", Color::White)
         } else {
             ("○ Daemon not running", Color::Yellow)
         };
@@ -132,6 +153,8 @@ impl PinCaptureModal {
         // ── Live hold section ────────────────────────────────────────────────
         let pin_label = if !connected {
             Span::styled("(connect daemon for live pin capture)", theme::hint_text())
+        } else if self.waiting_for_release && !pressed.is_empty() {
+            Span::styled("Release pin(s) before capturing…", Style::default().fg(Color::Yellow))
         } else if pressed.is_empty() {
             Span::styled("Hold a pin now…", theme::hint_text())
         } else {
@@ -145,15 +168,15 @@ impl PinCaptureModal {
             chunks[2],
         );
 
-        let ratio = if connected {
+        let ratio = if connected && !self.waiting_for_release {
             self.hold_since
                 .map(|s| (s.elapsed().as_millis() as f64 / HOLD_DURATION.as_millis() as f64).min(1.0))
                 .unwrap_or(0.0)
         } else {
             0.0
         };
-        let gauge_style = if connected {
-            Style::default().fg(theme::MAGENTA).add_modifier(Modifier::BOLD)
+        let gauge_style = if connected && !self.waiting_for_release {
+            Style::default().fg(theme::CYAN).add_modifier(Modifier::BOLD)
         } else {
             theme::hint_text()
         };

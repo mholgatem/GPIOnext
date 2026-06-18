@@ -386,21 +386,24 @@ fn dpad_direction_modal(device: String, dpad_num: usize, dir_idx: usize) -> Moda
     let command = format!("(3, {axis_code}, {value})");
     let dev2 = device.clone();
 
-    Modal::PinCapture(PinCaptureModal::new(
-        format!("Hold pin for {name}"),
-        move |pins, cfg| {
-            if let Some(vpins) = pins {
-                let pins_str = pins_to_str(&vpins);
-                config::upsert_mapping(cfg, DeviceRow::new(&dev2, &name, "AXIS", &command, pins_str));
-            }
-            // Advance to next direction; save after the last one
-            if dir_idx + 1 < 4 {
-                (Some(dpad_direction_modal(device, dpad_num, dir_idx + 1)), None)
-            } else {
-                (None, Some(ModalAction::Save))
-            }
-        },
-    ))
+    Modal::PinCapture(
+        PinCaptureModal::new(
+            format!("Hold pin for {name}"),
+            move |pins, cfg| {
+                if let Some(vpins) = pins {
+                    let pins_str = pins_to_str(&vpins);
+                    config::upsert_mapping(cfg, DeviceRow::new(&dev2, &name, "AXIS", &command, pins_str));
+                }
+                // Advance to next direction; save after the last one
+                if dir_idx + 1 < 4 {
+                    (Some(dpad_direction_modal(device, dpad_num, dir_idx + 1)), None)
+                } else {
+                    (None, Some(ModalAction::Save))
+                }
+            },
+        )
+        .wait_for_release()
+    )
 }
 
 fn joypad_button_modal(device: String) -> Modal {

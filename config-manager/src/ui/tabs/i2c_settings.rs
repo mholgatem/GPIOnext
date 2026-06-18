@@ -259,7 +259,7 @@ impl I2cSettingsTab {
                     value.clone()
                 };
                 let row_style = if self.focus == Focus::Settings && self.settings_field == i {
-                    theme::selected_btn()
+                    theme::selected_row()
                 } else {
                     Style::default()
                 };
