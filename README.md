@@ -1,4 +1,4 @@
-<p align="center"> <img src="docs/assets/gpionext-splash.svg" alt="GPIOnext+ terminal splash" width="100%"> </p>
+<p align="center"> <img src="docs/gpionext-splash.svg" alt="GPIOnext+ terminal splash" width="100%"> </p>
 
 [![GitHub All Releases](https://img.shields.io/github/downloads/mholgatem/GPIOnext/total?style=for-the-badge&logo=github&label=TOTAL%20DOWNLOADS&labelColor=220033&color=ff00cc&logoColor=ff00cc)](https://github.com/mholgatem/GPIOnext/releases)
 [![Latest Release Downloads](https://img.shields.io/github/downloads/mholgatem/GPIOnext/latest/total?style=for-the-badge&logo=github&label=LATEST%20RELEASE&labelColor=001f3f&color=00ffff&logoColor=ff00cc)](https://github.com/mholgatem/GPIOnext/releases/latest)
