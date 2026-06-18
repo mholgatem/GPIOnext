@@ -50,14 +50,14 @@ impl MappingsTab {
 
     pub fn handle_key(&mut self, key: KeyEvent, cfg: &mut GpioConfig) -> Option<Modal> {
         match key.code {
-            KeyCode::Up | KeyCode::Char('k') => {
+            KeyCode::Up => {
                 let i = self.state.selected().unwrap_or(0);
                 if i > 0 {
                     self.state.select(Some(i - 1));
                 }
                 None
             }
-            KeyCode::Down | KeyCode::Char('j') => {
+            KeyCode::Down => {
                 let count = self.visible_row_count(cfg);
                 let i = self.state.selected().unwrap_or(0);
                 if i + 1 < count {
@@ -184,7 +184,7 @@ impl MappingsTab {
                         theme::hint_text(),
                     )),
                     Line::from(Span::styled(
-                        "  Press [n] to add, or [f] to filter by device.",
+                        "  Press [a] to add, or [f] to filter by device.",
                         Style::default().fg(theme::CYAN),
                     )),
                 ])
@@ -256,7 +256,7 @@ impl MappingsTab {
                         theme::hint_text(),
                     )),
                     Line::from(Span::styled(
-                        "  Press [n] to add a mapping.",
+                        "  Press [a] to add a mapping.",
                         Style::default().fg(theme::CYAN),
                     )),
                 ])
@@ -315,7 +315,7 @@ impl MappingsTab {
 
 impl TabHint for MappingsTab {
     fn hint(&self) -> &str {
-        "↑↓/jk: move  a: add  d: delete  f: filter device  s: save  q: quit"
+        "↑↓: move  a: add  d: delete  f: filter device  s: save  q: quit"
     }
 }
 
@@ -338,45 +338,66 @@ fn launch_add_wizard(device: String) -> Option<Modal> {
 fn joypad_type_modal(device: String) -> Modal {
     Modal::SingleSelect(SingleSelectModal::new(
         "Add Joypad Mapping — Type",
-        vec!["Axis (D-Pad direction)".into(), "Button".into()],
+        vec!["Dpad/Joystick".into(), "Button".into()],
         move |idx, _cfg| match idx {
-            Some(0) => (Some(joypad_axis_name_modal(device)), None),
+            Some(0) => (Some(joypad_dpad_select_modal(device)), None),
             Some(1) => (Some(joypad_button_modal(device)), None),
             _ => (None, None),
         },
     ))
 }
 
-fn joypad_axis_name_modal(device: String) -> Modal {
+fn joypad_dpad_select_modal(device: String) -> Modal {
     Modal::SingleSelect(SingleSelectModal::new(
-        "Add Axis — Direction",
-        vec!["UP".into(), "DOWN".into(), "LEFT".into(), "RIGHT".into()],
+        "Add Dpad/Joystick — Select Number",
+        vec![
+            "Dpad/Joy 1".into(),
+            "Dpad/Joy 2".into(),
+            "Dpad/Joy 3".into(),
+            "Dpad/Joy 4".into(),
+        ],
         move |idx, _cfg| {
             if let Some(i) = idx {
-                let (direction, axis_code, value) = match i {
-                    0 => ("UP",    1i32, -255i32),
-                    1 => ("DOWN",  1,     255),
-                    2 => ("LEFT",  0,    -255),
-                    _ => ("RIGHT", 0,     255),
-                };
-                let command = format!("(3, {axis_code}, {value})");
-                let name = format!("DPAD 1 {direction}");
-                let dev2 = device.clone();
-                (
-                    Some(Modal::PinCapture(PinCaptureModal::new(
-                        format!("Hold pin for {name}"),
-                        move |pins, cfg| {
-                            if let Some(vpins) = pins {
-                                let pins_str = pins_to_str(&vpins);
-                                config::upsert_mapping(cfg, DeviceRow::new(&dev2, &name, "AXIS", &command, pins_str));
-                            }
-                            (None, Some(ModalAction::Save))
-                        },
-                    ))),
-                    None,
-                )
+                (Some(dpad_direction_modal(device, i + 1, 0)), None)
             } else {
                 (None, None)
+            }
+        },
+    ))
+}
+
+/// Chain four PinCaptureModals (UP → DOWN → LEFT → RIGHT) for a given Dpad number.
+/// dir_idx 0=UP, 1=DOWN, 2=LEFT, 3=RIGHT. Esc skips the current direction.
+fn dpad_direction_modal(device: String, dpad_num: usize, dir_idx: usize) -> Modal {
+    // (name_suffix, x_or_y: true=X, value)
+    const DIRECTIONS: &[(&str, bool, i32)] = &[
+        ("UP",    false, -255),
+        ("DOWN",  false,  255),
+        ("LEFT",  true,  -255),
+        ("RIGHT", true,   255),
+    ];
+    // (x_axis_code, y_axis_code) per dpad number (1-indexed)
+    const DPAD_AXES: &[(i32, i32)] = &[(0, 1), (3, 4), (16, 17), (18, 19)];
+
+    let (dir_suffix, is_x, value) = DIRECTIONS[dir_idx];
+    let (x_code, y_code) = DPAD_AXES[(dpad_num - 1).min(3)];
+    let axis_code = if is_x { x_code } else { y_code };
+    let name = format!("DPAD {dpad_num} {dir_suffix}");
+    let command = format!("(3, {axis_code}, {value})");
+    let dev2 = device.clone();
+
+    Modal::PinCapture(PinCaptureModal::new(
+        format!("Hold pin for {name}"),
+        move |pins, cfg| {
+            if let Some(vpins) = pins {
+                let pins_str = pins_to_str(&vpins);
+                config::upsert_mapping(cfg, DeviceRow::new(&dev2, &name, "AXIS", &command, pins_str));
+            }
+            // Advance to next direction; save after the last one
+            if dir_idx + 1 < 4 {
+                (Some(dpad_direction_modal(device, dpad_num, dir_idx + 1)), None)
+            } else {
+                (None, Some(ModalAction::Save))
             }
         },
     ))

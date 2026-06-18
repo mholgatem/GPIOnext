@@ -1,4 +1,4 @@
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -16,20 +16,13 @@ use super::Modal;
 
 const HOLD_DURATION: Duration = Duration::from_millis(1000);
 
-/// Modal for capturing GPIO pin(s).
+/// Modal for capturing GPIO pin(s) by physically holding them for 1 second.
 ///
-/// Two modes depending on daemon availability:
-/// - **Live** (daemon connected): user physically holds pin(s) for 1 second.
-/// - **Manual** (daemon not running): user types BOARD pin numbers directly.
-///
-/// Both modes are always available simultaneously — typing always works.
+/// Requires a connected daemon. Esc skips (calls on_capture with None).
 pub struct PinCaptureModal {
     pub title: String,
-    /// Pins held at the start of the live hold window
     pub hold_pins: Option<Vec<u8>>,
     hold_since: Option<Instant>,
-    /// Manual text entry buffer ("11" or "11,13" for combos)
-    input: String,
     pub on_capture: Box<dyn FnOnce(Option<Vec<u8>>, &mut GpioConfig) -> (Option<Modal>, Option<ModalAction>)>,
 }
 
@@ -42,13 +35,12 @@ impl PinCaptureModal {
             title: title.into(),
             hold_pins: None,
             hold_since: None,
-            input: String::new(),
             on_capture: Box::new(on_capture),
         }
     }
 
     pub fn handle_key(
-        mut self,
+        self,
         key: KeyEvent,
         cfg: &mut GpioConfig,
     ) -> (Option<Modal>, Option<ModalAction>, bool) {
@@ -56,30 +48,6 @@ impl PinCaptureModal {
             KeyCode::Esc => {
                 let (modal, action) = (self.on_capture)(None, cfg);
                 (modal, action, false)
-            }
-            KeyCode::Enter => {
-                let pins = parse_pin_input(&self.input);
-                if pins.is_empty() {
-                    return (Some(Modal::PinCapture(self)), None, false);
-                }
-                let (modal, action) = (self.on_capture)(Some(pins), cfg);
-                (modal, action, false)
-            }
-            // Backspace variants
-            KeyCode::Backspace | KeyCode::Char('\x7f') | KeyCode::Char('\x08') => {
-                self.input.pop();
-                (Some(Modal::PinCapture(self)), None, false)
-            }
-            // Ctrl+H = backspace in many terminals
-            KeyCode::Char('h') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.input.pop();
-                (Some(Modal::PinCapture(self)), None, false)
-            }
-            KeyCode::Char(c) if (c.is_ascii_digit() || c == ',' || c == ' ')
-                && !key.modifiers.contains(KeyModifiers::CONTROL) =>
-            {
-                self.input.push(c);
-                (Some(Modal::PinCapture(self)), None, false)
             }
             _ => (Some(Modal::PinCapture(self)), None, false),
         }
@@ -122,7 +90,7 @@ impl PinCaptureModal {
     }
 
     pub fn render(&self, f: &mut Frame, area: Rect, pin_state: &Arc<Mutex<PinState>>) {
-        let popup = centered_rect(62, 14, area);
+        let popup = centered_rect(62, 9, area);
         f.render_widget(Clear, popup);
 
         let block = Block::default()
@@ -142,13 +110,10 @@ impl PinCaptureModal {
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Length(1), // daemon status
-                Constraint::Length(1), // separator / divider
-                Constraint::Length(1), // live pins
-                Constraint::Length(1), // hold bar
                 Constraint::Length(1), // separator
-                Constraint::Length(1), // manual entry label
-                Constraint::Length(1), // manual entry field
-                Constraint::Min(0),    // hints
+                Constraint::Length(1), // live pins
+                Constraint::Length(1), // hold gauge
+                Constraint::Min(0),    // esc hint
             ])
             .split(inner);
 
@@ -156,7 +121,7 @@ impl PinCaptureModal {
         let (status_text, status_color) = if connected {
             ("● Daemon connected — hold pin(s) for 1 second to capture", Color::LightGreen)
         } else {
-            ("○ Daemon not running — use manual entry below", Color::Yellow)
+            ("○ Daemon not running", Color::Yellow)
         };
         f.render_widget(
             Paragraph::new(Line::from(Span::styled(status_text, Style::default().fg(status_color))))
@@ -194,54 +159,13 @@ impl PinCaptureModal {
         };
         f.render_widget(Gauge::default().gauge_style(gauge_style).ratio(ratio), chunks[3]);
 
-        // Divider
+        // ── Esc hint ─────────────────────────────────────────────────────────
         f.render_widget(
-            Paragraph::new(Line::from(Span::styled(
-                "─────────────────────────────────────────────",
-                theme::hint_text(),
-            )))
-            .alignment(Alignment::Center),
+            Paragraph::new(Line::from(Span::styled("Esc: skip", theme::hint_text())))
+                .alignment(Alignment::Center),
             chunks[4],
         );
-
-        // ── Manual entry ─────────────────────────────────────────────────────
-        f.render_widget(
-            Paragraph::new(Line::from(Span::styled(
-                "Enter BOARD pin number(s) — comma-separated for combos:",
-                Style::default().fg(Color::White),
-            ))),
-            chunks[5],
-        );
-
-        let input_display = format!(" > {}▋", self.input);
-        let input_style = if self.input.is_empty() {
-            theme::hint_text()
-        } else {
-            theme::input_text()
-        };
-        f.render_widget(
-            Paragraph::new(Line::from(Span::styled(input_display, input_style)))
-                .block(Block::default().borders(Borders::BOTTOM).border_style(theme::border_normal())),
-            chunks[6],
-        );
-
-        // Hints
-        f.render_widget(
-            Paragraph::new(Line::from(Span::styled(
-                "Enter: confirm   Esc: cancel   (e.g. 11  or  11,13 for combo)",
-                theme::hint_text(),
-            )))
-            .alignment(Alignment::Center),
-            chunks[7],
-        );
     }
-}
-
-/// Parse "11" → [11]  or  "11,13" → [11,13]
-fn parse_pin_input(s: &str) -> Vec<u8> {
-    s.split(',')
-        .filter_map(|t| t.trim().parse::<u8>().ok())
-        .collect()
 }
 
 fn centered_rect(percent_x: u16, height: u16, area: Rect) -> Rect {

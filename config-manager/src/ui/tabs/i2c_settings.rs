@@ -2,15 +2,15 @@
 ///
 /// Three sub-panels, cycled with F1/F2/F3:
 ///   [F1] Daemon Settings  — ↑↓ move, Enter/e edit, Space toggle
-///   [F2] I2C Chips        — ↑↓ move, n add, d delete
+///   [F2] I2C Chips        — ↑↓ move, a add, d delete
 ///   [F3] Live Pin Monitor — ↑↓ scroll through all pins
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
-    text::Line,
-    widgets::{Block, Borders, Cell, Row, Table, TableState},
+    text::{Line, Span},
+    widgets::{Block, Borders, Cell, Paragraph, Row, Table, TableState},
     Frame,
 };
 use std::sync::{Arc, Mutex};
@@ -95,10 +95,10 @@ impl I2cSettingsTab {
             }
         } else {
             match key.code {
-                KeyCode::Up | KeyCode::Char('k') => {
+                KeyCode::Up => {
                     if self.settings_field > 0 { self.settings_field -= 1; }
                 }
-                KeyCode::Down | KeyCode::Char('j') => {
+                KeyCode::Down => {
                     if self.settings_field + 1 < N_FIELDS { self.settings_field += 1; }
                 }
                 KeyCode::Enter | KeyCode::Char('e') => {
@@ -115,11 +115,11 @@ impl I2cSettingsTab {
     fn handle_live_pin_key(&mut self, key: KeyEvent, cfg: &GpioConfig) -> Option<Modal> {
         let total = live_pin_view::total_rows(cfg);
         match key.code {
-            KeyCode::Up | KeyCode::Char('k') => {
+            KeyCode::Up => {
                 let i = self.live_pin_scroll.selected().unwrap_or(0);
                 self.live_pin_scroll.select(Some(i.saturating_sub(1)));
             }
-            KeyCode::Down | KeyCode::Char('j') => {
+            KeyCode::Down => {
                 let i = self.live_pin_scroll.selected().unwrap_or(0);
                 if i + 1 < total {
                     self.live_pin_scroll.select(Some(i + 1));
@@ -171,17 +171,17 @@ impl I2cSettingsTab {
     fn handle_i2c_key(&mut self, key: KeyEvent, cfg: &mut GpioConfig) -> Option<Modal> {
         let chip_count = i2c_rows_count(cfg);
         match key.code {
-            KeyCode::Up | KeyCode::Char('k') => {
+            KeyCode::Up => {
                 let i = self.i2c_state.selected().unwrap_or(0);
                 if i > 0 { self.i2c_state.select(Some(i - 1)); }
                 None
             }
-            KeyCode::Down | KeyCode::Char('j') => {
+            KeyCode::Down => {
                 let i = self.i2c_state.selected().unwrap_or(0);
                 if i + 1 < chip_count { self.i2c_state.select(Some(i + 1)); }
                 None
             }
-            KeyCode::Char('n') | KeyCode::Char('N') => {
+            KeyCode::Char('a') | KeyCode::Char('A') => {
                 Some(Modal::AddI2c(AddI2cModal::new(|entry, cfg| {
                     if let Some(e) = entry { apply_i2c_entry(e, cfg); }
                     (None, Some(ModalAction::Save))
@@ -286,6 +286,28 @@ impl I2cSettingsTab {
     }
 
     fn render_i2c_table(&mut self, f: &mut Frame, area: Rect, cfg: &GpioConfig) {
+        let focused = self.focus == Focus::I2cTable;
+        let block = Block::default()
+            .title(" I2C Chips [F2] ")
+            .borders(Borders::ALL)
+            .border_style(if focused { theme::border_focused() } else { theme::border_normal() });
+
+        if i2c_rows_count(cfg) == 0 {
+            let inner = block.inner(area);
+            f.render_widget(block, area);
+            if focused {
+                f.render_widget(
+                    Paragraph::new(Line::from(Span::styled(
+                        "No I2C chips configured. Press [a] to configure.",
+                        theme::hint_text(),
+                    )))
+                    .alignment(Alignment::Center),
+                    inner,
+                );
+            }
+            return;
+        }
+
         let rows = build_i2c_rows(cfg);
         let header = Row::new(vec![
             Cell::from("Chip").style(theme::header().add_modifier(Modifier::BOLD)),
@@ -294,7 +316,6 @@ impl I2cSettingsTab {
             Cell::from("Int Pin").style(theme::header().add_modifier(Modifier::BOLD)),
         ]);
 
-        let focused = self.focus == Focus::I2cTable;
         let table = Table::new(
             rows,
             [
@@ -305,12 +326,7 @@ impl I2cSettingsTab {
             ],
         )
         .header(header)
-        .block(
-            Block::default()
-                .title(" I2C Chips [F2] ")
-                .borders(Borders::ALL)
-                .border_style(if focused { theme::border_focused() } else { theme::border_normal() }),
-        )
+        .block(block)
         .highlight_style(theme::selected_row());
 
         f.render_stateful_widget(table, area, &mut self.i2c_state);
@@ -324,7 +340,7 @@ impl TabHint for I2cSettingsTab {
                 "Settings [F1] | ↑↓: move  Enter/e: edit  Space: toggle  F2: I2C Chips  F3: Live Pins"
             }
             Focus::I2cTable => {
-                "I2C Chips [F2] | ↑↓: move  n: add  d: delete  F1: Settings  F3: Live Pins"
+                "I2C Chips [F2] | ↑↓: move  a: add  d: delete  F1: Settings  F3: Live Pins"
             }
             Focus::LivePins => {
                 "Live Pins [F3] | ↑↓: scroll  F1: Settings  F2: I2C Chips"

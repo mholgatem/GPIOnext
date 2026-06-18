@@ -46,14 +46,14 @@ impl SingleSelectModal {
         cfg: &mut GpioConfig,
     ) -> (Option<Modal>, Option<ModalAction>, bool) {
         match key.code {
-            KeyCode::Up | KeyCode::Char('k') => {
+            KeyCode::Up => {
                 let i = self.state.selected().unwrap_or(0);
                 if i > 0 {
                     self.state.select(Some(i - 1));
                 }
                 (Some(Modal::SingleSelect(self)), None, false)
             }
-            KeyCode::Down | KeyCode::Char('j') => {
+            KeyCode::Down => {
                 let i = self.state.selected().unwrap_or(0);
                 if i + 1 < self.items.len() {
                     self.state.select(Some(i + 1));
@@ -140,13 +140,13 @@ impl MultiSelectModal {
         cfg: &mut GpioConfig,
     ) -> (Option<Modal>, Option<ModalAction>, bool) {
         match key.code {
-            KeyCode::Up | KeyCode::Char('k') => {
+            KeyCode::Up => {
                 if self.cursor > 0 {
                     self.cursor -= 1;
                 }
                 (Some(Modal::MultiSelect(self)), None, false)
             }
-            KeyCode::Down | KeyCode::Char('j') => {
+            KeyCode::Down => {
                 if self.cursor + 1 < self.items.len() {
                     self.cursor += 1;
                 }

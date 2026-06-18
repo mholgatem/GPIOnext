@@ -241,7 +241,7 @@ impl App {
                 Block::default()
                     .borders(Borders::ALL)
                     .border_style(theme::tab_border())
-                    .title(Span::styled(" GPIOnext Config ", theme::border_normal())),
+                    .title(Span::styled(" GPIOnext Config [Tab] ", theme::border_normal())),
             )
             .select(self.tab as usize)
             .highlight_style(theme::tab_active())

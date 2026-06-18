@@ -42,8 +42,10 @@ pub fn render(
 
     let mut rows: Vec<Row> = Vec::new();
 
-    // Physical BOARD pins
-    for &board_pin in available_pins() {
+    // Physical BOARD pins — sorted numerically
+    let mut sorted_pins = available_pins().to_vec();
+    sorted_pins.sort_unstable();
+    for &board_pin in &sorted_pins {
         let pressed = state.is_pressed(board_pin);
         let gpio_label = gpio_map
             .get(&board_pin)

@@ -1,5 +1,5 @@
 /// Devices tab — 2×3 grid of device "buttons" for Joypad 1-4, Keyboard, Commands.
-/// Keys: ←→↑↓/hjkl navigate grid; Enter/n = edit mappings for selected; d = delete all.
+/// Keys: ←→↑↓ navigate grid; Enter = edit mappings for selected; d = delete device.
 
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
@@ -9,7 +9,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
     Frame,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::{
     config::{self, GpioConfig},
@@ -33,19 +33,19 @@ impl DevicesTab {
 
     pub fn handle_key(&mut self, key: KeyEvent, cfg: &mut GpioConfig) -> Option<Modal> {
         match key.code {
-            KeyCode::Left | KeyCode::Char('h') => {
+            KeyCode::Left => {
                 self.selected = (self.selected + 5) % 6;
                 None
             }
-            KeyCode::Right | KeyCode::Char('l') => {
+            KeyCode::Right => {
                 self.selected = (self.selected + 1) % 6;
                 None
             }
-            KeyCode::Up | KeyCode::Char('k') => {
+            KeyCode::Up => {
                 self.selected = (self.selected + 3) % 6;
                 None
             }
-            KeyCode::Down | KeyCode::Char('j') => {
+            KeyCode::Down => {
                 self.selected = (self.selected + 3) % 6;
                 None
             }
@@ -73,9 +73,10 @@ impl DevicesTab {
 
     pub fn render(&self, f: &mut Frame, area: Rect, cfg: &GpioConfig) {
         let counts = build_count_map(cfg);
+        let joypad_counts = build_joypad_count_map(cfg);
 
         let outer_block = Block::default()
-            .title(" Devices ")
+            .title(" Devices [←→↑↓] ")
             .borders(Borders::ALL)
             .border_style(theme::border_normal());
         let inner_area = outer_block.inner(area);
@@ -124,12 +125,7 @@ impl DevicesTab {
                     .borders(Borders::ALL)
                     .border_style(border_style);
 
-                let count_text = match count {
-                    0 => "(no mappings)".to_string(),
-                    1 => "1 mapping".to_string(),
-                    n => format!("{n} mappings"),
-                };
-                let count_style = if is_selected {
+                let cell_style = if is_selected {
                     theme::selected_btn()
                 } else if count > 0 {
                     Style::default().fg(theme::CYAN)
@@ -137,12 +133,21 @@ impl DevicesTab {
                     theme::hint_text()
                 };
 
-                let para = Paragraph::new(vec![
-                    Line::from(""),
-                    Line::from(Span::styled(count_text, count_style)),
-                ])
-                .alignment(Alignment::Center)
-                .block(block);
+                let lines = if device_name.starts_with("Joypad") {
+                    let jc = joypad_counts.get(device_name).copied().unwrap_or((0, 0));
+                    device_cell_lines_joypad(jc, cell_style)
+                } else {
+                    let count_text = match count {
+                        0 => "(no mappings)".to_string(),
+                        1 => "1 mapping".to_string(),
+                        n => format!("{n} mappings"),
+                    };
+                    vec![Line::from(""), Line::from(Span::styled(count_text, cell_style))]
+                };
+
+                let para = Paragraph::new(lines)
+                    .alignment(Alignment::Center)
+                    .block(block);
 
                 f.render_widget(para, col_areas[col_idx]);
             }
@@ -152,7 +157,7 @@ impl DevicesTab {
 
 impl TabHint for DevicesTab {
     fn hint(&self) -> &str {
-        "←→↑↓/hjkl: navigate  Enter: edit mappings  d: delete all  s: save  q: quit"
+        "←→↑↓: navigate  Enter: edit mappings  d: delete device  s: save  q: quit"
     }
 }
 
@@ -164,4 +169,45 @@ fn build_count_map(cfg: &GpioConfig) -> HashMap<&'static str, usize> {
         }
     }
     map
+}
+
+/// Returns (dpad_groups, button_count) per Joypad device.
+/// dpad_groups = distinct "DPAD N" prefixes across AXIS rows.
+fn build_joypad_count_map(cfg: &GpioConfig) -> HashMap<&'static str, (usize, usize)> {
+    let mut map: HashMap<&'static str, (HashSet<String>, usize)> = HashMap::new();
+    for row in &cfg.devices {
+        if let Some(&key) = DEVICE_LIST.iter().find(|&&d| d == row.device.as_str()) {
+            if !key.starts_with("Joypad") { continue; }
+            let entry = map.entry(key).or_insert_with(|| (HashSet::new(), 0));
+            if row.event_type == "AXIS" {
+                // Name format "DPAD N DIR" — extract first two words as group key
+                let group: String = row.name.split_whitespace().take(2).collect::<Vec<_>>().join(" ");
+                entry.0.insert(group);
+            } else if row.event_type == "BUTTON" {
+                entry.1 += 1;
+            }
+        }
+    }
+    map.into_iter().map(|(k, (groups, btns))| (k, (groups.len(), btns))).collect()
+}
+
+/// Build the info lines for a Joypad cell.
+fn device_cell_lines_joypad(counts: (usize, usize), style: ratatui::style::Style) -> Vec<Line<'static>> {
+    let (dpads, btns) = counts;
+    if dpads == 0 && btns == 0 {
+        return vec![
+            Line::from(""),
+            Line::from(Span::styled("(no mappings)", style)),
+        ];
+    }
+    let mut lines = vec![Line::from("")];
+    if dpads > 0 {
+        let label = if dpads == 1 { "1 Dpad/joystick".to_string() } else { format!("{dpads} Dpads/joysticks") };
+        lines.push(Line::from(Span::styled(label, style)));
+    }
+    if btns > 0 {
+        let label = if btns == 1 { "1 button".to_string() } else { format!("{btns} buttons") };
+        lines.push(Line::from(Span::styled(label, style)));
+    }
+    lines
 }

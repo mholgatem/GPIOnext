@@ -153,6 +153,7 @@ echo -e "${GREEN}Startup hook written.${NONE}"
 
 echo -e "${CYAN}${UNDERLINE}Installing User Scripts...${NONE}"
 mkdir -p "$USERSCRIPTS_DIR"
+rm -f "${USERSCRIPTS_DIR}/GPIOnext"*.sh
 
 cat > "${USERSCRIPTS_DIR}/GPIOnext Start.sh" << 'SCRIPTEOF'
 #!/bin/bash
