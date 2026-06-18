@@ -1,20 +1,12 @@
-# GPIOnext+
+<p align="center"> <img src="docs/assets/gpionext-splash.svg" alt="GPIOnext+ terminal splash" width="100%"> </p>
 
 [![GitHub All Releases](https://img.shields.io/github/downloads/mholgatem/GPIOnext/total?style=for-the-badge&logo=github&label=TOTAL%20DOWNLOADS&labelColor=220033&color=ff00cc&logoColor=ff00cc)](https://github.com/mholgatem/GPIOnext/releases)
 [![Latest Release Downloads](https://img.shields.io/github/downloads/mholgatem/GPIOnext/latest/total?style=for-the-badge&logo=github&label=LATEST%20RELEASE&labelColor=001f3f&color=00ffff&logoColor=ff00cc)](https://github.com/mholgatem/GPIOnext/releases/latest)
 
-
-### Pardon Our Dust!
-While the base code works, I am currently testing the installer/updater and various system configurations (Pi3/4/5, Buster/Bullseye/Bookworm, 32bit/64bit). This takes a bit of time, but I'm working hard to get through all of the testing as quickly as possible. In the meantime, the legacy code is still available. If you have problems with the installer, you should be able to clone the Legacy-Code branch to /opt/gpionext, then run the setup.sh script.
-
-Thank you for your patience!
-
----
-
-This is a fully featured GPIO to HID controller Daemon that is fully compatible with RetroPie (and PiPlay, RIP). It includes an intuitive config utility and an easy to use CLI wrapper in order to quickly make changes on the fly. In this long overdue revamp, we have migrated to a core handler written in Rust. This lower level language gets us closer to the metal reducing the lag induced by the Python interpreter.
+This is a fully featured GPIO to HID controller Daemon that is fully compatible with RetroPie/PiPlay/Recalbox/Batocera(currently being tested). It includes an intuitive config utility and an easy to use CLI in order to quickly make changes on the fly. In this long overdue revamp, we have fully migrated from Python to Rust. This lower level language gets us closer to the metal reducing the lag induced by the Python interpreter.
 
 <h4>What's New?</h4>
-<ul><li>Precompiled Rust Core for lower latency</li>
+<ul><li>Precompiled Rust binaries for lower latency</li>
 <li>Support for popular I2C expanders (MCP23017 & PCF8574) adds virtual GPIO pins for all of your arcade needs</li>
 <li>Audio HAT auto detection - automatically detect audio HAT and keep GPIOnext from using those pins</li>
 <li>Improved terminal configuration tool allows configuration even on "lite" OS's or over SSH/Xterm</li>
@@ -25,6 +17,7 @@ This is a fully featured GPIO to HID controller Daemon that is fully compatible 
 <h4>Coming Soon</h4>
 <ul><li>Support for ADS1115 I2C analog → digital converter for high resolution joysticks</li></ul>
 
+<br><br>
 ## 1. Installation
 
 The easiest way to install GPIOnext is to use our bootstrap installer. This will download the latest release and handle all dependencies automatically.
@@ -49,14 +42,22 @@ curl -fL https://raw.githubusercontent.com/mholgatem/GPIOnext/refs/heads/Legacy-
 
 ---
 
+<br><br>
 ## 2. Configuration
 
 Once installed, you should run the configuration tool to map your buttons and joysticks.
 
-### Basic Setup
+### -- Basic Setup (retroPi/PiPlay/stock) --
 ```bash
 gpionext config
 ```
+
+### -- Recalbox Setup --
+```bash
+Settings menu > Advanced Settings > User Scripts > GPIOnext Configure
+```
+
+---
 This interactive tool will guide you through:
 - Detecting pressed pins.
 - Mapping pins to "Commands", "Keys", or "Joypad Buttons/Axes".
@@ -68,8 +69,10 @@ This interactive tool will guide you through:
 - **Axis:** Maps pins to analog joystick directions (Up/Down/Left/Right).
 - **Command:** Executes a shell command when the button is pressed.
 
+
 ---
 
+<br><br>
 ## 3. CLI Commands & Settings
 
 GPIOnext provides a powerful CLI wrapper via the `gpionext` command.
@@ -100,6 +103,7 @@ Settings are applied immediately and will restart the daemon:
 
 ---
 
+<br><br>
 ## 4. Running GPIOnext
 
 - **Systemd Service:** GPIOnext runs as a systemd service (`gpionext.service`). It starts automatically on boot if enabled.

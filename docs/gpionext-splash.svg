@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="330" viewBox="0 0 1100 330" role="img" aria-labelledby="title desc">
+  <title id="title">GPIOnext+</title>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#060814"/>
+      <stop offset="45%" stop-color="#0b1020"/>
+      <stop offset="100%" stop-color="#16041f"/>
+    </linearGradient>
+
+    <linearGradient id="grid" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#00e5ff" stop-opacity="0.12"/>
+      <stop offset="50%" stop-color="#ff00cc" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#00e5ff" stop-opacity="0.12"/>
+    </linearGradient>
+
+    <filter id="cyan-glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feFlood flood-color="#00e5ff" flood-opacity="0.85"/>
+      <feComposite in2="blur" operator="in"/>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <filter id="fuchsia-glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feFlood flood-color="#ff00cc" flood-opacity="0.9"/>
+      <feComposite in2="blur" operator="in"/>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <style>
+      .terminal {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", "DejaVu Sans Mono", monospace;
+        white-space: pre;
+        font-variant-ligatures: none;
+      }
+      .big {
+        font-size: 23px;
+        font-weight: 800;
+        letter-spacing: -0.4px;
+      }
+      .tag {
+        font-size: 21px;
+        font-weight: 700;
+        letter-spacing: 0.4px;
+      }
+      .sub {
+        font-size: 18px;
+        font-weight: 600;
+        letter-spacing: 0.2px;
+      }
+      .scanline {
+        stroke: #ffffff;
+        stroke-opacity: 0.055;
+        stroke-width: 1;
+      }
+    </style>
+  </defs>
+
+  <rect width="980" height="330" rx="18" fill="url(#bg)"/>
+
+  <!-- subtle vapor grid -->
+  <g opacity="0.65">
+    <path d="M40 260 H1060" stroke="url(#grid)" stroke-width="1"/>
+    <path d="M70 285 H1030" stroke="url(#grid)" stroke-width="1"/>
+    <path d="M120 310 H980" stroke="url(#grid)" stroke-width="1"/>
+    <path d="M215 330 L485 236" stroke="#00e5ff" stroke-opacity="0.11"/>
+    <path d="M885 330 L615 236" stroke="#ff00cc" stroke-opacity="0.13"/>
+    <path d="M345 330 L515 236" stroke="#00e5ff" stroke-opacity="0.10"/>
+    <path d="M755 330 L585 236" stroke="#ff00cc" stroke-opacity="0.12"/>
+  </g>
+
+  <!-- terminal frame -->
+  <rect x="22" y="22" width="930" height="286" rx="8" fill="#070a12" opacity="0.58"/>
+  <rect x="22" y="22" width="930" height="286" rx="8" fill="none" stroke="#00e5ff" stroke-width="2" filter="url(#cyan-glow)"/>
+  <path d="M22 64 H1078" stroke="#ff00cc" stroke-width="2" filter="url(#fuchsia-glow)"/>
+
+  <!-- chromatic offset: fuchsia shadow behind cyan block letters -->
+  <text x="61" y="85" class="terminal big" fill="#ff00cc" opacity="0.72" filter="url(#fuchsia-glow)" xml:space="preserve">
+    <tspan x="61" dy="0"> ▄████  ██████  ██  ██████  ███    ██ ███████ ██   ██ ████████   </tspan>
+    <tspan x="61" dy="31">██      ██   ██ ██ ██    ██ ████   ██ ██       ██ ██     ██      ██</tspan>
+    <tspan x="61" dy="31">██  ███ ██████  ██ ██    ██ ██ ██  ██ █████     ███      ██    ██████</tspan>
+    <tspan x="61" dy="31">██   ██ ██      ██ ██    ██ ██  ██ ██ ██       ██ ██     ██      ██</tspan>
+    <tspan x="61" dy="31"> █████  ██      ██  ██████  ██   ████ ███████ ██   ██    ██      </tspan>
+  </text>
+
+  <text x="56" y="81" class="terminal big" fill="#00e5ff" filter="url(#cyan-glow)" xml:space="preserve">
+    <tspan x="56" dy="0"> ▄████  ██████  ██  ██████  ███    ██ ███████ ██   ██ ████████   </tspan>
+    <tspan x="56" dy="31">██      ██   ██ ██ ██    ██ ████   ██ ██       ██ ██     ██      ██</tspan>
+    <tspan x="56" dy="31">██  ███ ██████  ██ ██    ██ ██ ██  ██ █████     ███      ██    ██████</tspan>
+    <tspan x="56" dy="31">██   ██ ██      ██ ██    ██ ██  ██ ██ ██       ██ ██     ██      ██</tspan>
+    <tspan x="56" dy="31"> █████  ██      ██  ██████  ██   ████ ███████ ██   ██    ██      </tspan>
+  </text>
+
+  <text x="150" y="258" class="terminal tag" fill="#f7f7ff">GPIOnext+  <tspan fill="#ff00cc">//</tspan>  BUILD THE CAB  <tspan fill="#00e5ff">//</tspan>  MAP THE PINS</text>
+  <text x="300" y="297" class="terminal sub" fill="#ff7af0">░▒▓ Joysticks and Beyond! ▓▒░</text>
+
+  <!-- scanlines -->
+  <g>
+    <path class="scanline" d="M24 84 H1076"/>
+    <path class="scanline" d="M24 116 H1076"/>
+    <path class="scanline" d="M24 148 H1076"/>
+    <path class="scanline" d="M24 180 H1076"/>
+    <path class="scanline" d="M24 212 H1076"/>
+    <path class="scanline" d="M24 244 H1076"/>
+    <path class="scanline" d="M24 276 H1076"/>
+  </g>
+</svg>
