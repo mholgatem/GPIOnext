@@ -118,7 +118,7 @@ done
 if [ "$(whoami)" != "root" ]; then
     if $PIPED; then
         echo -e "${RED}Error: Must be run as root.${NONE}" >&2
-        echo "Use: curl -fL https://raw.githubusercontent.com/mholgatem/GPIOnext/main/manage | ${RED}sudo${NONE} bash"
+        echo -e "Use: curl -fL https://raw.githubusercontent.com/mholgatem/GPIOnext/main/manage | ${RED}sudo${NONE} bash"
         exit 1
     fi
     # Reconstruct args and re-exec under sudo
