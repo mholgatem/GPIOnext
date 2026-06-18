@@ -103,12 +103,12 @@
 
   <!-- scanlines -->
   <g>
-    <path class="scanline" d="M24 84 H1076"/>
-    <path class="scanline" d="M24 116 H1076"/>
-    <path class="scanline" d="M24 148 H1076"/>
-    <path class="scanline" d="M24 180 H1076"/>
-    <path class="scanline" d="M24 212 H1076"/>
-    <path class="scanline" d="M24 244 H1076"/>
-    <path class="scanline" d="M24 276 H1076"/>
+    <path class="scanline" d="M24 84 H980"/>
+    <path class="scanline" d="M24 116 H980"/>
+    <path class="scanline" d="M24 148 H980"/>
+    <path class="scanline" d="M24 180 H980"/>
+    <path class="scanline" d="M24 212 H980"/>
+    <path class="scanline" d="M24 244 H980"/>
+    <path class="scanline" d="M24 276 H980"/>
   </g>
 </svg>
