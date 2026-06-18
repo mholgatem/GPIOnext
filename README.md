@@ -1,7 +1,12 @@
-<p align="center"> <img src="docs/gpionext-splash.svg" alt="GPIOnext+ terminal splash" width="100%"> </p>
-
-[![GitHub All Releases](https://img.shields.io/github/downloads/mholgatem/GPIOnext/total?style=for-the-badge&logo=github&label=TOTAL%20DOWNLOADS&labelColor=220033&color=ff00cc&logoColor=ff00cc)](https://github.com/mholgatem/GPIOnext/releases)
-[![Latest Release Downloads](https://img.shields.io/github/downloads/mholgatem/GPIOnext/latest/total?style=for-the-badge&logo=github&label=LATEST%20RELEASE&labelColor=001f3f&color=00ffff&logoColor=ff00cc)](https://github.com/mholgatem/GPIOnext/releases/latest)
+<p align="center">
+  <img src="docs/gpionext-splash.svg" alt="GPIOnext+ terminal splash" width="80%"><br>
+  <a href="https://github.com/mholgatem/GPIOnext/releases">
+    <img src="https://img.shields.io/github/downloads/mholgatem/GPIOnext/total?style=for-the-badge&logo=github&label=TOTAL%20DOWNLOADS&labelColor=220033&color=ff00cc&logoColor=ff00cc" alt="GitHub All Releases">
+  </a> &nbsp;&nbsp;&nbsp;&nbsp; &nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://github.com/mholgatem/GPIOnext/releases/latest">
+    <img src="https://img.shields.io/github/downloads/mholgatem/GPIOnext/latest/total?style=for-the-badge&logo=github&label=LATEST%20RELEASE&labelColor=001f3f&color=00ffff&logoColor=ff00cc" alt="Latest Release Downloads">
+  </a> &nbsp;&nbsp;&nbsp;&nbsp; &nbsp;&nbsp;&nbsp;&nbsp;
+</p>
 
 This is a fully featured GPIO to HID controller Daemon that is fully compatible with RetroPie/PiPlay/Recalbox/Batocera(currently being tested). It includes an intuitive config utility and an easy to use CLI in order to quickly make changes on the fly. In this long overdue revamp, we have fully migrated from Python to Rust. This lower level language gets us closer to the metal reducing the lag induced by the Python interpreter.
 
@@ -47,14 +52,14 @@ curl -fL https://raw.githubusercontent.com/mholgatem/GPIOnext/refs/heads/Legacy-
 
 Once installed, you should run the configuration tool to map your buttons and joysticks.
 
-### -- Basic Setup (retroPi/PiPlay/stock) --
+### -- Basic Config (retroPi/PiPlay/stock) --
 ```bash
 gpionext config
 ```
 
-### -- Recalbox Setup --
+### -- Recalbox Config --
 ```bash
-Settings menu > Advanced Settings > User Scripts > GPIOnext Configure
+Settings menu > Advanced Settings > User Scripts > GPIOnext Configure > "Run"
 ```
 
 ---
@@ -62,6 +67,8 @@ This interactive tool will guide you through:
 - Detecting pressed pins.
 - Mapping pins to "Commands", "Keys", or "Joypad Buttons/Axes".
 - Setting up multi-button combos.
+
+<img src="docs/screenshots/i2c_settings.png" alt="GPIOnext config i2c settings" width="80%">
 
 ### Peripheral Types
 - **Button:** Triggers a standard joystick button (e.g., Button A, Start).
