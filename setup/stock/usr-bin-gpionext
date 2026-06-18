@@ -84,8 +84,7 @@ case "$1" in
 
 "UPDATE")
     echo -e "${CYAN}Starting update...${NONE}"
-    # Fetch the bootstrap installer and run it with update mode + forwarded args
-    curl -sfL https://raw.githubusercontent.com/mholgatem/GPIOnext/master/install.sh | sudo bash -s -- --update "$@"
+    sudo bash "${INSTALL_PATH}/manage" update
     ;;
 
 "REMOVE")

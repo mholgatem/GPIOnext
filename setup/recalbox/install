@@ -16,9 +16,7 @@ set -euo pipefail
 BIN_DIR="${GPIONEXT_INSTALL_PATH}/bin"
 PID_FILE="/run/gpionext.pid"
 CUSTOM_SH="/recalbox/share/system/custom.sh"
-ES_CFG_DIR="/recalbox/share/system/.emulationstation"
-ES_CUSTOM_CFG="${ES_CFG_DIR}/es_systems.cfg"
-ROMS_DIR="/recalbox/share/roms/gpionext"
+USERSCRIPTS_DIR="/recalbox/share/userscripts/manual"
 
 # ---------------------------------------------------------------------------
 # udev rule — DISABLED on Recalbox (read-only /etc; session rules don't persist)
@@ -150,88 +148,50 @@ HOOKEOF
 echo -e "${GREEN}Startup hook written.${NONE}"
 
 # ---------------------------------------------------------------------------
-# EmulationStation custom system entry
+# User Scripts (Settings > Advanced Settings > User Scripts)
 # ---------------------------------------------------------------------------
 
-echo -e "${CYAN}${UNDERLINE}Registering GPIOnext in EmulationStation...${NONE}"
-mkdir -p "$ES_CFG_DIR"
+echo -e "${CYAN}${UNDERLINE}Installing User Scripts...${NONE}"
+mkdir -p "$USERSCRIPTS_DIR"
 
-ES_BLOCK='<!-- GPIOnext begin -->
-<system>
-  <name>gpionext</name>
-  <fullname>GPIOnext</fullname>
-  <path>/recalbox/share/roms/gpionext</path>
-  <extension>.sh .SH</extension>
-  <command>bash %ROM%</command>
-  <platform>linux</platform>
-  <theme>custom</theme>
-</system>
-<!-- GPIOnext end -->'
-
-if [ ! -f "$ES_CUSTOM_CFG" ]; then
-    printf '<?xml version="1.0"?>\n<systemList>\n%s\n</systemList>\n' "$ES_BLOCK" > "$ES_CUSTOM_CFG"
-elif grep -q '<!-- GPIOnext begin -->' "$ES_CUSTOM_CFG"; then
-    echo "ES system entry already present — skipping."
-else
-    TMPFILE=$(mktemp)
-    while IFS= read -r line; do
-        if echo "$line" | grep -qF '</systemList>'; then
-            printf '%s\n' "$ES_BLOCK"
-        fi
-        printf '%s\n' "$line"
-    done < "$ES_CUSTOM_CFG" > "$TMPFILE"
-    mv "$TMPFILE" "$ES_CUSTOM_CFG"
-fi
-
-echo -e "${GREEN}ES system entry written to ${ES_CUSTOM_CFG}${NONE}"
-
-# ---------------------------------------------------------------------------
-# ROM shortcuts
-# ---------------------------------------------------------------------------
-
-echo -e "${CYAN}${UNDERLINE}Creating EmulationStation ROM shortcuts...${NONE}"
-mkdir -p "$ROMS_DIR"
-
-cat > "${ROMS_DIR}/Start GPIOnext.sh" << 'ROMEOF'
+cat > "${USERSCRIPTS_DIR}/GPIOnext Start.sh" << 'SCRIPTEOF'
 #!/bin/bash
-modprobe uinput  2>/dev/null || true
-modprobe evdev   2>/dev/null || true
-modprobe i2c-dev 2>/dev/null || true
-cp /recalbox/share/system/gpionext/bin/gpionext /tmp/gpionext 2>/dev/null && chmod +x /tmp/gpionext
-/tmp/gpionext \
-    --config /recalbox/share/system/gpionext/config/gpionext.json \
-    --debounce 1 --combo_delay 50 &
+modprobe uinput evdev i2c-dev 2>/dev/null || true
+cp /recalbox/share/system/gpionext/bin/gpionext /tmp/gpionext && chmod +x /tmp/gpionext
+/tmp/gpionext --config /recalbox/share/system/gpionext/config/gpionext.json --debounce 1 --combo_delay 50 &
 echo $! > /run/gpionext.pid
-sleep 2
-ROMEOF
+echo "GPIOnext started (PID: $!)"
+SCRIPTEOF
 
-cat > "${ROMS_DIR}/Stop GPIOnext.sh" << 'ROMEOF'
+cat > "${USERSCRIPTS_DIR}/GPIOnext Stop.sh" << 'SCRIPTEOF'
 #!/bin/bash
 if [ -f /run/gpionext.pid ]; then
     kill "$(cat /run/gpionext.pid)" 2>/dev/null || true
     rm -f /run/gpionext.pid
+    echo "GPIOnext stopped."
+else
+    echo "GPIOnext is not running."
 fi
-sleep 2
-ROMEOF
+SCRIPTEOF
 
-cat > "${ROMS_DIR}/Configure GPIOnext.sh" << 'ROMEOF'
+cat > "${USERSCRIPTS_DIR}/GPIOnext Configure.sh" << 'SCRIPTEOF'
 #!/bin/bash
-cp /recalbox/share/system/gpionext/bin/gpionext-config /tmp/gpionext-config 2>/dev/null && chmod +x /tmp/gpionext-config
+cp /recalbox/share/system/gpionext/bin/gpionext-config /tmp/gpionext-config && chmod +x /tmp/gpionext-config
 /tmp/gpionext-config --config /recalbox/share/system/gpionext/config/gpionext.json
-ROMEOF
+SCRIPTEOF
 
-cat > "${ROMS_DIR}/Update GPIOnext.sh" << 'ROMEOF'
+cat > "${USERSCRIPTS_DIR}/GPIOnext Update.sh" << 'SCRIPTEOF'
 #!/bin/bash
 bash /recalbox/share/system/gpionext/manage update
-ROMEOF
+SCRIPTEOF
 
-cat > "${ROMS_DIR}/Remove GPIOnext.sh" << 'ROMEOF'
+cat > "${USERSCRIPTS_DIR}/GPIOnext Remove.sh" << 'SCRIPTEOF'
 #!/bin/bash
 bash /recalbox/share/system/gpionext/manage remove
-ROMEOF
+SCRIPTEOF
 
-chmod 755 "${ROMS_DIR}/"*.sh
-echo -e "${GREEN}ROM shortcuts created in ${ROMS_DIR}${NONE}"
+chmod 755 "${USERSCRIPTS_DIR}/GPIOnext"*.sh
+echo -e "${GREEN}User scripts installed to ${USERSCRIPTS_DIR}${NONE}"
 
 # ---------------------------------------------------------------------------
 # Done
@@ -263,6 +223,8 @@ if [[ "$USER_INPUT" =~ ^[Yy] ]]; then
 fi
 
 echo
-echo -e "Use the ${CYAN}GPIOnext${NONE} system in EmulationStation to configure and control the daemon."
 echo -e "GPIOnext will start automatically on next boot via ${CYAN}${CUSTOM_SH}${NONE}."
+echo -e "To manage GPIOnext manually:"
+echo -e "  ${CYAN}Settings > Advanced Settings > User Scripts${NONE}"
+echo -e "    → GPIOnext Start / Stop / Configure / Update / Remove"
 echo

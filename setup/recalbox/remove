@@ -10,8 +10,7 @@ set -euo pipefail
 
 PID_FILE="/run/gpionext.pid"
 CUSTOM_SH="/recalbox/share/system/custom.sh"
-ES_CUSTOM_CFG="/recalbox/share/system/.emulationstation/es_systems.cfg"
-ROMS_DIR="/recalbox/share/roms/gpionext"
+USERSCRIPTS_DIR="/recalbox/share/userscripts/manual"
 UDEV_RULE="/etc/udev/rules.d/10-gpionext.rules"
 
 # ---------------------------------------------------------------------------
@@ -50,19 +49,14 @@ if [ -f "$CUSTOM_SH" ] && grep -q '# GPIOnext begin' "$CUSTOM_SH"; then
 fi
 
 # ---------------------------------------------------------------------------
-# Remove ES custom system entry
+# Remove User Scripts
 # ---------------------------------------------------------------------------
 
-if [ -f "$ES_CUSTOM_CFG" ] && grep -q '<!-- GPIOnext begin -->' "$ES_CUSTOM_CFG"; then
-    echo "Removing GPIOnext entry from ${ES_CUSTOM_CFG}..."
-    sed -i '/<!-- GPIOnext begin -->/,/<!-- GPIOnext end -->/d' "$ES_CUSTOM_CFG"
+if [ -d "$USERSCRIPTS_DIR" ]; then
+    for f in "${USERSCRIPTS_DIR}/GPIOnext"*.sh; do
+        [ -f "$f" ] && rm -f "$f" && echo "Removed ${f}"
+    done
 fi
-
-# ---------------------------------------------------------------------------
-# Remove ROM shortcuts
-# ---------------------------------------------------------------------------
-
-[ -d "$ROMS_DIR" ] && rm -rf "$ROMS_DIR" && echo "Removed ROM shortcuts: ${ROMS_DIR}"
 
 # ---------------------------------------------------------------------------
 # Remove udev rule (may not exist on Recalbox)
@@ -87,9 +81,8 @@ fi
 
 echo
 if [ "$GPIONEXT_PURGE" = "true" ]; then
-    echo -e "${GREEN}GPIOnext removed (including config). Restart EmulationStation to update the system list.${NONE}"
+    echo -e "${GREEN}GPIOnext removed (including config).${NONE}"
 else
     echo -e "${GREEN}GPIOnext removed. Config preserved at ${GPIONEXT_INSTALL_PATH}/config/${NONE}"
-    echo "Restart EmulationStation to update the system list."
 fi
 echo

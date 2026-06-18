@@ -5,15 +5,15 @@
 
 INSTALL_PATH="/userdata/system/gpionext"
 PID_FILE="/run/gpionext.pid"
-DAEMON="${INSTALL_PATH}/venv/bin/python3"
-SCRIPT="${INSTALL_PATH}/python/gpionext.py"
+DAEMON="${INSTALL_PATH}/bin/gpionext"
+CONFIG="${INSTALL_PATH}/config/gpionext.json"
 
 start() {
     if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
         echo "gpionext is already running (PID: $(cat "$PID_FILE"))"
         return 0
     fi
-    "$DAEMON" -u "$SCRIPT" --debounce 1 --combo_delay 50 &
+    "$DAEMON" --config "$CONFIG" --debounce 1 --combo_delay 50 &
     echo $! > "$PID_FILE"
     echo "gpionext started (PID: $(cat "$PID_FILE"))"
 }

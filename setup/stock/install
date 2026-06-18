@@ -46,10 +46,7 @@ apt-get update -q
 
 echo -e "${CYAN}${UNDERLINE}Installing system dependencies...${NONE}"
 
-LIBGPIOD_RT="libgpiod2"
-$IS_BOOKWORM && LIBGPIOD_RT="libgpiod3"
-
-apt-get -y install curl git i2c-tools "${LIBGPIOD_RT}"
+apt-get -y install curl git i2c-tools
 
 # ---------------------------------------------------------------------------
 # Copy files to install path
