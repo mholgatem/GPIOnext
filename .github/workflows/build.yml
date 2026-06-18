@@ -85,28 +85,21 @@ jobs:
           rm -rf dist/tmp dist/*.whl
           echo "Built: $(ls dist/)"
 
-      - name: Install cross-compilation toolchain for config-manager
-        run: |
-          case "${{ matrix.target }}" in
-            armv7-unknown-linux-gnueabihf)
-              sudo apt-get install -y gcc-arm-linux-gnueabihf ;;
-            aarch64-unknown-linux-gnu)
-              sudo apt-get install -y gcc-aarch64-linux-gnu ;;
-          esac
+      - name: Install cargo-zigbuild
+        run: pip install ziglang cargo-zigbuild
 
       - name: Build config-manager and daemon binaries
-        env:
-          CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER: arm-linux-gnueabihf-gcc
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
         run: |
-          # config-manager (no GPIO/I2C needed)
-          cargo build --release -p gpionext-config --target ${{ matrix.target }}
+          # Pin glibc 2.17 floor to match manylinux2014 (.so build above).
+          # cargo-zigbuild uses zig as the cross-linker; output lands in the
+          # standard target/<triple>/release/ directory regardless of the suffix.
+          cargo zigbuild --release -p gpionext-config \
+            --target ${{ matrix.target }}.2.17
           cp target/${{ matrix.target }}/release/gpionext-config \
              dist/gpionext-config-${{ matrix.arch }}
 
-          # daemon (GPIO + I2C; same features as the .so)
-          cargo build --release -p gpionext \
-            --target ${{ matrix.target }} \
+          cargo zigbuild --release -p gpionext \
+            --target ${{ matrix.target }}.2.17 \
             --no-default-features --features gpio,i2c
           cp target/${{ matrix.target }}/release/gpionext \
              dist/gpionext-${{ matrix.arch }}
