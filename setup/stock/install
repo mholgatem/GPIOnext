@@ -41,12 +41,12 @@ echo
 # System dependencies
 # ---------------------------------------------------------------------------
 
-echo -e "${CYAN}${UNDERLINE}Updating package lists...${NONE}"
-apt-get update -q
-
-echo -e "${CYAN}${UNDERLINE}Installing system dependencies...${NONE}"
-
-apt-get -y install curl git i2c-tools
+# curl is needed for future updates; git and i2c-tools (i2cdetect) are
+# convenience only, so a broken apt source must not block the install.
+if ! ensure_apt_packages --required curl --optional git i2c-tools; then
+    echo -e "${RED}Fix your apt sources and run the installer again.${NONE}" >&2
+    exit 1
+fi
 
 # ---------------------------------------------------------------------------
 # Copy files to install path

@@ -11,6 +11,79 @@ RED='\033[31m'
 FUSCHIA='\033[35m'
 UNDERLINE='\033[4m'
 BOLD='\033[1m'
+YELLOW='\033[33m'
+
+# ensure_apt_packages [--required PKG...] [--optional PKG...]
+#
+# Installs any of the listed Debian packages that are not already installed.
+# apt is skipped entirely when everything is present, so hosts with a broken
+# or offline apt config (e.g. Buster pointing at the retired
+# raspbian.raspberrypi.org archive) can still install GPIOnext.
+#
+# Parameters:
+#   --required PKG...  packages the install cannot continue without
+#   --optional PKG...  packages that only add convenience (warn if missing)
+#
+# Returns:
+#   0 when all required packages are installed afterwards (optional ones may
+#   still be missing, with a warning); 1 when a required package is missing.
+ensure_apt_packages() {
+    local mode="required" pkg
+    local -a required=() optional=() missing=() still_missing=()
+
+    for pkg in "$@"; do
+        case "$pkg" in
+            --required) mode="required" ;;
+            --optional) mode="optional" ;;
+            *) if [ "$mode" = "required" ]; then required+=("$pkg"); else optional+=("$pkg"); fi ;;
+        esac
+    done
+
+    # dpkg-query reports "install ok installed" only for fully installed packages
+    for pkg in "${required[@]}" "${optional[@]}"; do
+        if ! dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q "install ok installed"; then
+            missing+=("$pkg")
+        fi
+    done
+
+    if [ ${#missing[@]} -eq 0 ]; then
+        echo -e "${GREEN}System dependencies already installed — skipping apt.${NONE}"
+        return 0
+    fi
+
+    echo -e "${CYAN}${UNDERLINE}Updating package lists...${NONE}"
+    local update_log
+    update_log=$(mktemp)
+    # A failed update is not fatal: the local package cache may still be usable
+    if ! apt-get update -q 2>&1 | tee "$update_log"; then
+        echo -e "${YELLOW}Warning: apt-get update reported errors. Trying to install with the existing package lists.${NONE}"
+        if grep -q "raspbian.raspberrypi.org" "$update_log"; then
+            echo -e "${YELLOW}Your Raspbian Buster archive has moved. Replace it in /etc/apt/sources.list with:${NONE}"
+            echo -e "  sudo sed -i 's#raspbian.raspberrypi.org#legacy.raspbian.org#g' /etc/apt/sources.list"
+        fi
+    fi
+    rm -f "$update_log"
+
+    echo -e "${CYAN}${UNDERLINE}Installing system dependencies: ${missing[*]}${NONE}"
+    apt-get -y install "${missing[@]}" || true
+
+    for pkg in "${missing[@]}"; do
+        if ! dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q "install ok installed"; then
+            still_missing+=("$pkg")
+        fi
+    done
+
+    local fatal=0
+    for pkg in "${still_missing[@]}"; do
+        if [[ " ${required[*]} " == *" $pkg "* ]]; then
+            echo -e "${RED}Error: required package '${pkg}' could not be installed.${NONE}" >&2
+            fatal=1
+        else
+            echo -e "${YELLOW}Warning: optional package '${pkg}' could not be installed; continuing without it.${NONE}"
+        fi
+    done
+    return $fatal
+}
 
 # copy_from_source SRC INSTALL_PATH
 #
