@@ -53,52 +53,29 @@ echo -e "Debian version: ${FUSCHIA}$DEBIAN_VERSION${NONE} (Bookworm+: $IS_BOOKWO
 echo
 
 # ---------------------------------------------------------------------------
-# Legacy apt source compatibility (Buster/Bullseye)
-# ---------------------------------------------------------------------------
-
-ensure_legacy_apt_source() {
-    local buster_repo='deb http://legacy.raspbian.org/raspbian/ buster main contrib non-free rpi'
-    local buster_list='/etc/apt/sources.list.d/gpionext-buster-legacy.list'
-    local sources_blob=''
-
-    # Collect current apt source declarations for simple text checks.
-    if [ -f /etc/apt/sources.list ]; then
-        sources_blob+=$(cat /etc/apt/sources.list)
-    fi
-    if [ -d /etc/apt/sources.list.d ]; then
-        sources_blob+=$'\n'
-        sources_blob+=$(cat /etc/apt/sources.list.d/*.list 2>/dev/null || true)
-    fi
-
-    if [ "$DEBIAN_VERSION" -eq 10 ] 2>/dev/null; then
-        if ! grep -Eq 'legacy\.raspbian\.org/raspbian/\s+buster' <<< "$sources_blob"; then
-            echo -e "${RED}Detected Debian Buster and no legacy Raspbian source.${NONE}"
-            echo "Some old RetroPie images require the archived Buster repo to install packages."
-            read -r -p "Add legacy Buster source now? [y/N]: " ADD_BUSTER_REPO
-            if [[ "$ADD_BUSTER_REPO" =~ ^[Yy]$ ]]; then
-                printf '%s\n' "$buster_repo" > "$buster_list"
-                echo -e "${GREEN}Added legacy source:${NONE} $buster_repo"
-            else
-                echo -e "${RED}Skipping legacy source addition by user choice.${NONE}"
-            fi
-        fi
-    elif [ "$DEBIAN_VERSION" -eq 11 ] 2>/dev/null; then
-        if ! grep -Eq 'raspbian\.org/raspbian/\s+bullseye|raspbian\.raspberrypi\.org/raspbian/\s+bullseye' <<< "$sources_blob"; then
-            echo -e "${RED}Detected Debian Bullseye but no obvious Bullseye Raspbian source was found.${NONE}"
-            echo "If apt update fails, review /etc/apt/sources.list and /etc/apt/sources.list.d/*.list."
-        fi
-    fi
-}
-
-# ---------------------------------------------------------------------------
 # apt update
 # ---------------------------------------------------------------------------
 
 shopt -s nocasematch
-if [[ "${1:-}" != "--noaptupdate" ]]; then
-	ensure_legacy_apt_source
+if [[ "${1:-}" != "-noupdate" ]]; then
     echo -e "${CYAN}${UNDERLINE}Updating package lists...${NONE}"
-    apt-get update -q
+    UPDATE_LOG=$(mktemp)
+    # Capture output so a retired Buster archive can be recognised and explained
+    if ! apt-get update -q 2>&1 | tee "$UPDATE_LOG"; then
+        if grep -q "raspbian.raspberrypi.org" "$UPDATE_LOG"; then
+            rm -f "$UPDATE_LOG"
+            echo
+            echo -e "${RED}${BOLD}Error: the Raspbian Buster archive has moved to legacy.raspbian.org.${NONE}" >&2
+            echo -e "Update ${BOLD}/etc/apt/sources.list${NONE} (not raspi.list), then run this setup again:" >&2
+            echo -e "  ${CYAN}sudo sed -i 's#raspbian.raspberrypi.org#legacy.raspbian.org#g' /etc/apt/sources.list${NONE}" >&2
+            echo -e "  ${CYAN}sudo apt-get update${NONE}" >&2
+            exit 1
+        fi
+        rm -f "$UPDATE_LOG"
+        echo -e "${RED}Error: apt-get update failed. Fix the errors above and run this setup again.${NONE}" >&2
+        exit 1
+    fi
+    rm -f "$UPDATE_LOG"
 fi
 shopt -u nocasematch
 
@@ -151,7 +128,8 @@ fi
 # Copy files to install path
 # ---------------------------------------------------------------------------
 
-echo -e "${CYAN}${UNDERLINE}Updating file permissions...${NONE}"
+echo -e "${CYAN}${UNDERLINE}Copying Legacy files...${NONE}"
+cp -r "${SCRIPTPATH}/"* "${INSTALL_PATH}/"
 chmod 755 "${INSTALL_PATH}/gpionext.py"
 chmod 755 "${INSTALL_PATH}/config_manager.py"
 
