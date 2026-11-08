@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/gpionext-splash.svg" alt="GPIOnext+ terminal splash" width="80%"><br>
+  <img src="docs/gpionext-splash.png" alt="GPIOnext+ terminal splash" width="80%"><br>
   <a href="https://github.com/mholgatem/GPIOnext/releases">
     <img src="https://img.shields.io/github/downloads/mholgatem/GPIOnext/total?style=for-the-badge&logo=github&label=TOTAL%20DOWNLOADS&labelColor=220033&color=ff00cc&logoColor=ff00cc" alt="GitHub All Releases">
   </a> &nbsp;&nbsp;&nbsp;&nbsp; &nbsp;&nbsp;&nbsp;&nbsp;
